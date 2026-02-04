@@ -11,7 +11,21 @@ datasets/metaworld_generation.h5
 datasets/metaworld_dino_embeddings_eval_all_fail.h5
 datasets/metaworld_dino_embeddings_eval_close_succ.h5
 datasets/metaworld_labeled.h5
-wandb
+# Datasets
+datasets/
+downloaded_data/
+
+# Python build artifacts
+*.egg-info/
+__pycache__/
+**/__pycache__/
+
+# External repos / submodules
+metaworld_policy_training/Metaworld/
+metaworld_policy_training/mjrl/
+
+# WandB
+wandb/
 utils/__pycache__
 data
 
