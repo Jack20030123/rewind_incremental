@@ -30,7 +30,9 @@ def train_step_fn(args, batch, rewind_model, optimizer, scheduler):
     rewind_model.train()
     optimizer.zero_grad()
     positive_video_array = torch.cat([openx_data["video_array"], extra_data["video_array"]], dim = 0).to(device).float()
-    positive_text_array = torch.cat([openx_data["text_array"].squeeze(1), extra_data["text_array"].squeeze()], dim = 0).to(device).float()              
+    
+    positive_text_array = torch.cat([openx_data["text_array"].squeeze(1), extra_data["text_array"].squeeze(1)], dim=0).to(device).float()
+    # positive_text_array = torch.cat([openx_data["text_array"].squeeze(1), extra_data["text_array"].squeeze()], dim = 0).to(device).float()              
     positive_progress = torch.cat([openx_data["progress"], extra_data["progress"]], dim = 0).to(device)
 
     negative_video_array_1 = torch.roll(positive_video_array, extra_len, 0)
