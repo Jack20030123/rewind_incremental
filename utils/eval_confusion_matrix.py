@@ -81,7 +81,10 @@ def plot_confusion_matrix(h5_file, set, rewind_model, args, epoch = None, run_na
 
     pred_org_progress_list = []
 
-    for i  in tqdm(range(len(eval_envs))):
+    # 2/10 Confusion Matrix limit eval
+    max_n = args.eval_max_samples if hasattr(args, "eval_max_samples") and args.eval_max_samples > 0 else len(eval_envs)
+
+    for i in tqdm(range(min(len(eval_envs), max_n))):
         env = eval_envs[i]
         choose_keys = list(h5_file[env].keys())
         choose_keys = [key for key in choose_keys if "lang" not in key]
