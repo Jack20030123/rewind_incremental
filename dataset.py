@@ -73,7 +73,6 @@ class ReWiNDVideoDataset(Dataset):
         return video_frames, video_progress, np.ones(video_progress.shape[0])
 
 
-
     def sample_reverse_video_feature(self, data_group):
         traj_lists = list(data_group.keys())
         traj_lists = [traj for traj in traj_lists if "lang" not in traj] 
@@ -121,6 +120,59 @@ class ReWiNDVideoDataset(Dataset):
         else:
             return video_frames, progress, np.ones(progress.shape[0])
         
+    # ReWiND + freeze (2/8)
+    def sample_reverse_uniform_frozen_video_feature(self, data_group, freeze_ratio=0.4):
+        # 1. pick a random trajectory
+        traj_lists = list(data_group.keys())
+        traj_lists = [traj for traj in traj_lists if "lang" not in traj]
+        random_name = random.choice(traj_lists)
+
+        progress_dataset = np.asarray(data_group[random_name])  # (N, D)
+
+        # 2. sample forward segment
+        start_idx = random.randint(0, len(progress_dataset) // 2)
+        end_idx = random.randint(len(progress_dataset) // 2, len(progress_dataset))
+
+        while end_idx - start_idx < 3:
+            start_idx = random.randint(0, len(progress_dataset) // 2)
+            end_idx = random.randint(len(progress_dataset) // 2, len(progress_dataset))
+
+        video_frames = np.array(progress_dataset)[start_idx:end_idx]
+        full_frames = np.array(progress_dataset)[start_idx:]
+
+        # 3. forward progress
+        progress_idx = np.arange(0, video_frames.shape[0]) + 1
+        progress = progress_idx / len(full_frames)
+
+        # 4. rewind
+        selected_end_point = random.randint(2, len(video_frames))
+        reverse_frame = video_frames[::-1][1:selected_end_point]
+        reverse_progress = progress[::-1][1:selected_end_point]
+
+        video_frames = np.concatenate([video_frames, reverse_frame], axis=0)
+        progress = np.concatenate([progress, reverse_progress], axis=0)
+
+        # 5. UNIFORM FREEZING (per-frame)
+        for t in range(1, video_frames.shape[0]):
+            if random.random() < freeze_ratio:
+                video_frames[t] = video_frames[t - 1]
+
+        # 6. convert to tensor
+        video_frames = th.from_numpy(video_frames).float()
+
+        # 7. optional padding
+        if self.args.subsample_video:
+            video_frames = self.padding_video(video_frames, self.args.max_length)
+
+            progress = np.expand_dims(progress, axis=1)
+            progress = self.padding_video(progress, self.args.max_length).detach().cpu().numpy()
+            progress = np.squeeze(progress, axis=1)
+
+        return video_frames, progress, np.ones(progress.shape[0])
+
+
+
+
     def padding_video(self, video_frames, max_length):
         video_length = len(video_frames)
         if type(video_frames) == np.ndarray:
@@ -155,7 +207,15 @@ class ReWiNDVideoDataset(Dataset):
         if self.args.rewind:
             random_num = random.random()
             if random_num < self.args.rewind_ratio:
-                video_array, progress, class_label = self.sample_reverse_video_feature(data_group)
+                # freeze
+                if self.args.use_freeze:
+                    video_array, progress, class_label = \
+                        self.sample_reverse_uniform_frozen_video_feature(
+                            data_group, self.args.freeze_ratio
+                        )
+                else:
+                    video_array, progress, class_label = \
+                        self.sample_reverse_video_feature(data_group)
             else:
                 video_array, progress, class_label = self.sample_video_feature(data_group)
                 

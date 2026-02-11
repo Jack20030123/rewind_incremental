@@ -160,6 +160,9 @@ if __name__ == "__main__":
     argparser.add_argument('--eval_interval', type=int, default=1)
     argparser.add_argument('--rewind_ratio', type=float, default=0.8)
     argparser.add_argument('--pdf', action='store_true', help="Whether to save confusion matrix as PDF")
+    argparser.add_argument('--use_freeze', action='store_true')
+    argparser.add_argument('--freeze_ratio', type=float, default=0.4)
+    argparser.add_argument('--eval_max_samples', type=int, default=-1)
     args = argparser.parse_args()
     main(args)
 
