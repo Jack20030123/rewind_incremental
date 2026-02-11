@@ -392,6 +392,11 @@ def generate_rewind_data(
     # 4) Iterate over all (i, j) combinations
     for i, env_video_name in enumerate(tasks):
         
+        # Use less evals (2/10)
+        if args is not None and hasattr(args, "eval_max_samples"):
+            if args.eval_max_samples > 0 and i >= args.eval_max_samples:
+                break
+
         group = h5_file[env_video_name]
         # Gather all 5 embeddings
         # Some HDF5 might not have exactly 5, so we do `range(5)` but check if dataset exists.
