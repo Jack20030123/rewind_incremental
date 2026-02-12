@@ -379,7 +379,7 @@ def generate_rewind_data(
     for env in tasks:
         # Read minilm_lang_embedding for each env
         group = h5_file[env]
-        if annotation != None:
+        if annotation != None and f"minilm_lang_embedding_{annotation}" in group:
             text_arr = np.asarray(group[f"minilm_lang_embedding_{annotation}"])  # shape (1, 384)
         else:
             text_arr = np.asarray(group["minilm_lang_embedding"])
