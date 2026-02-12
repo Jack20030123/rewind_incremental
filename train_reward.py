@@ -101,8 +101,8 @@ def main(args):
         with torch.no_grad():
             if args.extra_data_type == "metaworld":
 
-                plot_confusion_matrix(h5_file = h5_train_eval_file, set = "train", rewind_model = rewind_model, args = args, epoch = epoch, run_name = experiment_name)
-                plot_confusion_matrix(h5_file = h5_eval_file, set = "eval", rewind_model = rewind_model, args = args, epoch = epoch, run_name = experiment_name)
+                # plot_confusion_matrix(h5_file = h5_train_eval_file, set = "train", rewind_model = rewind_model, args = args, epoch = epoch, run_name = experiment_name)
+                # plot_confusion_matrix(h5_file = h5_eval_file, set = "eval", rewind_model = rewind_model, args = args, epoch = epoch, run_name = experiment_name)
         
         if epoch <= 15:
             if (epoch + 1) % args.eval_interval == 0: # too save time, we evaluate every 5 epochs
