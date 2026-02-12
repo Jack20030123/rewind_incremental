@@ -566,6 +566,11 @@ def compute_correlation_from_sequences(
         pearson_overall_avg = 0.0
         spearman_overall_avg = 0.0
 
+    print("\n===== Evaluation Metrics =====")
+    print(f"Average Pearson:  {pearson_overall_avg:.4f}")
+    print(f"Average Spearman: {spearman_overall_avg:.4f}")
+    print("================================\n")
+
     # log overall
     wandb.log({f"{set_type}_Demo_Reward_Alignment/Average_Pearson": pearson_overall_avg, "epoch": epoch})
     wandb.log({f"{set_type}_Demo_Reward_Alignment/Average_Spearman": spearman_overall_avg, "epoch": epoch})
