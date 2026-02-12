@@ -6,6 +6,8 @@ from model import ReWiNDTransformer
 from utils.eval_utils import compute_metrics_multi
 
 def main(args):
+    import wandb
+    wandb.init(project="rewind-eval", mode="disabled") 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load checkpoint
