@@ -13,8 +13,6 @@
 #SBATCH --time=24:00:00
 
 set -euo pipefail
-module purge
-module load gcc/11.3.0
 
 source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
 conda activate rad
