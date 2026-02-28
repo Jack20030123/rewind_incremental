@@ -12,12 +12,12 @@
 #SBATCH --mem=32G
 #SBATCH --time=24:00:00
 
-set -euo pipefail
-
 source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
 conda activate rewind
 
-cd /home1/chunheil/ReWiND
+export WANDB_MODE=offline
+
+cd /home1/chunheil/ReWiND/metaworld_policy_training
 
 python train_policy.py \
   metaworld=off_on_15 \
