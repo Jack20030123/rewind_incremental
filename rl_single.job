@@ -15,7 +15,7 @@
 set -euo pipefail
 
 source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
-conda activate rad
+conda activate rewind
 
 cd /home1/chunheil/ReWiND
 
