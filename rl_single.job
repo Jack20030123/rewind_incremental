@@ -15,6 +15,7 @@
 source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
 conda activate rewind
 
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home1/chunheil/.mujoco/mujoco210/bin
 export WANDB_MODE=offline
 
 cd /home1/chunheil/ReWiND/metaworld_policy_training
