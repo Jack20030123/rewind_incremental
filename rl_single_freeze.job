@@ -1,0 +1,30 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=rewind_rl
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-task=1
+#SBATCH --constraint="a100|l40s|v100|a40"
+#SBATCH --mem=32G
+#SBATCH --time=24:00:00
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate rewind
+
+export WANDB_MODE=offline
+
+cd /home1/chunheil/ReWiND/metaworld_policy_training
+
+python train_policy.py \
+  metaworld=off_on_15 \
+  algorithm=wsrl_iql \
+  reward=rewind_metaworld \
+  offline_training.offline_training_steps=15000 \
+  general_training.seed=42 \
+  environment.env_id=button-press-wall-v2 \
+  offline_training.offline_h5_path=../datasets/metaworld_labeled.h5 \
+  reward_model.model_path=../checkpoints_freeze/rewind_metaworld_epoch_1.pth
