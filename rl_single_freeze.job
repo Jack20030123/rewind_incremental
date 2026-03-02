@@ -26,6 +26,6 @@ python train_policy.py \
   reward=rewind_metaworld \
   offline_training.offline_training_steps=15000 \
   general_training.seed=42 \
-  environment.env_id=button-press-wall-v2 \
+  environment.env_id=reach-wall-v2 \
   offline_training.offline_h5_path=../datasets/metaworld_labeled.h5 \
   reward_model.model_path=../checkpoints_freeze/rewind_metaworld_epoch_1.pth
