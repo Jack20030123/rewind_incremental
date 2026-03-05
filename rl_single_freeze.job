@@ -24,6 +24,7 @@ python train_policy.py \
   metaworld=off_on_15 \
   algorithm=wsrl_iql \
   reward=rewind_metaworld \
+  reward_model.name=rewind_freeze \
   offline_training.offline_training_steps=15000 \
   general_training.seed=42 \
   environment.env_id=faucet-close-v2 \
