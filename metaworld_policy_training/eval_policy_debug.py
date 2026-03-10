@@ -1,15 +1,54 @@
-import numpy as np
 import inspect
+import random
+
+import numpy as np
 
 import hydra
 import torch as th
 import wandb
+from gym.wrappers.time_limit import TimeLimit
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
 from stable_baselines3.common.save_util import load_from_zip_file
 
 from offline_rl_algorithms.rlpd import RLPD
 from train_policy import create_envs, parse_reward_model
+
+
+def set_global_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    th.manual_seed(seed)
+    if th.cuda.is_available():
+        th.cuda.manual_seed_all(seed)
+
+
+def _unwrap_to_metaworld_base(env):
+    current = env
+    while hasattr(current, "env"):
+        current = current.env
+    return current
+
+
+def set_eval_env_seed(env, seed: int) -> None:
+    if hasattr(env, "action_space"):
+        env.action_space.seed(seed)
+    if hasattr(env, "observation_space"):
+        env.observation_space.seed(seed)
+
+    for sub_env in env.envs:
+        base_env = _unwrap_to_metaworld_base(sub_env)
+        if not hasattr(base_env, "all_env_types"):
+            continue
+
+        # Freeze reset randomness so reset() reuses the exact requested seed.
+        base_env.rank = seed
+        base_env.random_reset = "fixed"
+        base_env.base_env = base_env.all_env_types[base_env.env_id](seed=seed)
+        base_env.base_env = TimeLimit(
+            base_env.base_env,
+            max_episode_steps=base_env.max_episode_steps,
+        )
 
 
 def _normalize_saved_policy_kwargs(data: dict) -> None:
@@ -96,6 +135,8 @@ def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
 
     cfg.environment.n_envs = 1
+    eval_seed = int(cfg.general_training.seed)
+    set_global_seed(eval_seed)
 
     ckpt_path = to_absolute_path(cfg.general_training.ckpt_path)
     wandb.init(
@@ -104,22 +145,25 @@ def main(cfg: DictConfig) -> None:
         mode="disabled",
     )
     reward_model = parse_reward_model(cfg.reward_model)
-    envs, _ = create_envs(cfg, reward_model)
+    _, eval_env = create_envs(cfg, reward_model)
+    set_eval_env_seed(eval_env, eval_seed)
 
     bootstrap_model = RLPD(
         policy=cfg.model.policy_type,
-        env=envs,
+        env=eval_env,
         offline_algo=None,
         device="auto",
         _init_setup_model=False,
     )
-    model = load_rlpd_for_eval(bootstrap_model, ckpt_path, envs)
+    model = load_rlpd_for_eval(bootstrap_model, ckpt_path, eval_env)
 
-    obs = envs.reset()
+    obs = eval_env.reset()
     done = False
     timestep = 0
     episode_start = np.array([True], dtype=bool)
 
+    print(f"checkpoint: {ckpt_path}")
+    print(f"eval_seed: {eval_seed}")
     print("timestep, reward, done, success")
     while not done:
         action, _ = model.predict(
@@ -127,7 +171,7 @@ def main(cfg: DictConfig) -> None:
             deterministic=True,
             episode_start=episode_start,
         )
-        obs, reward, done_array, info = envs.step(action)
+        obs, reward, done_array, info = eval_env.step(action)
 
         reward_value = float(reward[0])
         done = bool(done_array[0])
