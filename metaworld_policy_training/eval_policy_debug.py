@@ -43,23 +43,19 @@ def main(cfg: DictConfig):
             },
         )
     elif algo == "rlpd":
-        # instantiate a fresh model (same constructor used in train_policy)
+        from stable_baselines3.common.save_util import load_from_zip_file
+
+        data, params, _ = load_from_zip_file(ckpt_path, device="cpu")
+
         model = RLPD(
             cfg.model.policy_type,
             envs,
             offline_algo=None,
         )
 
-        # load only the torch parameters (avoids missing observation/action_space in .zip)
-        model = model.load(
-            ckpt_path,
-            env=envs,
-            load_torch_params_only=True,
-            custom_objects={
-                "observation_space": envs.observation_space,
-                "action_space": envs.action_space,
-            },
-        )
+        # Only load actor + critic weights, skip optimizer
+        model.policy.load_state_dict(params["policy"], strict=False)
+        model.critic.load_state_dict(params["critic"], strict=False)
     else:
         raise ValueError(f"Unsupported algorithm: {algo}")
 
