@@ -44,8 +44,8 @@ def main(cfg: DictConfig):
         )
     elif algo == "rlpd":
         model = RLPD.load(
-            ckpt_path,
-            envs,
+            ckpt_path.replace(".zip", ""),
+            env=envs,
             custom_objects={
                 "observation_space": envs.observation_space,
                 "action_space": envs.action_space,
