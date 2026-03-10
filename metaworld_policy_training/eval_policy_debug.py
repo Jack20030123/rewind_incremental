@@ -1,3 +1,5 @@
+import inspect
+
 import hydra
 import torch as th
 from hydra.utils import to_absolute_path
@@ -45,15 +47,23 @@ def load_rlpd_for_eval(
 
     _normalize_saved_policy_kwargs(data)
 
+    init_signature = inspect.signature(bootstrap_model.__class__.__init__)
+    init_kwargs = {
+        name: data[name]
+        for name in init_signature.parameters
+        if name in data
+        and name
+        not in {"self", "policy", "env", "offline_algo", "device", "_init_setup_model"}
+    }
+
     model = bootstrap_model.__class__(
         policy=data["policy_class"],
-        env=None,
+        env=env,
         offline_algo=None,
         device=device,
-        _init_setup_model=False,
+        **init_kwargs,
     )
     model.__dict__.update(data)
-    model._setup_model()
 
     filtered_params = {
         name: state
