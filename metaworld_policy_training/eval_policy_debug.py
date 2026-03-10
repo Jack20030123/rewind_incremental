@@ -43,13 +43,16 @@ def main(cfg: DictConfig):
             },
         )
     elif algo == "rlpd":
+        # Use same loading pattern as train_policy
         model = RLPD.load(
-            ckpt_path,   # first positional argument
-            envs,        # second positional argument
+            ckpt_path,
+            env=envs,
             custom_objects={
                 "observation_space": envs.observation_space,
                 "action_space": envs.action_space,
             },
+            print_system_info=True,
+            load_torch_params_only=True,
         )
     else:
         raise ValueError(f"Unsupported algorithm: {algo}")
