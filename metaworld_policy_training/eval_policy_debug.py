@@ -28,7 +28,7 @@ def main(cfg: DictConfig):
     # ---- Determine algorithm ----
     algo = cfg.general_training.algo.lower()
 
-    ckpt_path = to_absolute_path(cfg.general_training.ckpt_path)
+    ckpt_path = str(cfg.general_training.ckpt_path)
     print("Loading checkpoint:", ckpt_path)
 
     if algo == "sac":
