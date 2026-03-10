@@ -43,14 +43,22 @@ def main(cfg: DictConfig):
             },
         )
     elif algo == "rlpd":
+        # instantiate a fresh model (same constructor used in train_policy)
         model = RLPD(
             cfg.model.policy_type,
             envs,
             offline_algo=None,
         )
+
+        # load only the torch parameters (avoids missing observation/action_space in .zip)
         model = model.load(
             ckpt_path,
             env=envs,
+            load_torch_params_only=True,
+            custom_objects={
+                "observation_space": envs.observation_space,
+                "action_space": envs.action_space,
+            },
         )
     else:
         raise ValueError(f"Unsupported algorithm: {algo}")
