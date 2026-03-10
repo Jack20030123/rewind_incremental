@@ -3,6 +3,7 @@ import inspect
 
 import hydra
 import torch as th
+import wandb
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
 from stable_baselines3.common.save_util import load_from_zip_file
@@ -97,6 +98,11 @@ def main(cfg: DictConfig) -> None:
     cfg.environment.n_envs = 1
 
     ckpt_path = to_absolute_path(cfg.general_training.ckpt_path)
+    wandb.init(
+        project=cfg.logging.wandb_project_name,
+        entity=cfg.logging.wandb_entity_name,
+        mode="disabled",
+    )
     reward_model = parse_reward_model(cfg.reward_model)
     envs, _ = create_envs(cfg, reward_model)
 
@@ -134,4 +140,8 @@ def main(cfg: DictConfig) -> None:
 
 if __name__ == "__main__":
     th.set_grad_enabled(False)
-    main()
+    try:
+        main()
+    finally:
+        if wandb.run is not None:
+            wandb.finish()
