@@ -31,11 +31,6 @@ def _unwrap_to_metaworld_base(env):
 
 
 def set_eval_env_seed(env, seed: int) -> None:
-    if hasattr(env, "action_space"):
-        env.action_space.seed(seed)
-    if hasattr(env, "observation_space"):
-        env.observation_space.seed(seed)
-
     for sub_env in env.envs:
         base_env = _unwrap_to_metaworld_base(sub_env)
         if not hasattr(base_env, "all_env_types"):
