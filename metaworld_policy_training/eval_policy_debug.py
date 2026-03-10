@@ -1,3 +1,4 @@
+import numpy as np
 import inspect
 
 import hydra
@@ -111,10 +112,15 @@ def main(cfg: DictConfig) -> None:
     obs = envs.reset()
     done = False
     timestep = 0
+    episode_start = np.array([True], dtype=bool)
 
     print("timestep, reward, done, success")
     while not done:
-        action, _ = model.predict(obs, deterministic=True)
+        action, _ = model.predict(
+            obs,
+            deterministic=True,
+            episode_start=episode_start,
+        )
         obs, reward, done_array, info = envs.step(action)
 
         reward_value = float(reward[0])
@@ -123,6 +129,7 @@ def main(cfg: DictConfig) -> None:
 
         print(f"{timestep}, {reward_value:.4f}, {done}, {success}")
         timestep += 1
+        episode_start = done_array.astype(bool)
 
 
 if __name__ == "__main__":
