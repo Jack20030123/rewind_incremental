@@ -16,16 +16,32 @@ source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
 conda activate rewind
 
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home1/chunheil/.mujoco/mujoco210/bin
-export WANDB_MODE=offline
+
+if [ -f "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}" ]; then
+  # Load WANDB_API_KEY/WANDB_ENTITY from a user-only readable file if present.
+  source "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}"
+fi
+
+: "${WANDB_API_KEY:?WANDB_API_KEY is not set. Export it before sbatch or store it in \$HOME/.config/wandb/env.}"
+export WANDB_API_KEY
+export WANDB_ENTITY="${WANDB_ENTITY:-lincolnlam-university-of-southern-california}"
+export WANDB_SILENT=true
 
 cd /home1/chunheil/ReWiND/metaworld_policy_training
+
+SEED=${SEED:-42}
+GROUP=${GROUP:-rewind_iql_faucet-close-v2}
+LOGDIR=${LOGDIR:-./logs/${GROUP}/seed_${SEED}}
 
 python train_policy.py \
   metaworld=off_on_15 \
   algorithm=wsrl_iql \
   reward=rewind_metaworld \
+  logging.wandb_entity_name="${WANDB_ENTITY}" \
+  logging.wandb_group_name="${GROUP}" \
+  logging.log_dir="${LOGDIR}" \
   offline_training.offline_training_steps=15000 \
-  general_training.seed=42 \
+  general_training.seed=${SEED} \
   environment.env_id=faucet-close-v2 \
   offline_training.offline_h5_path=../datasets/metaworld_labeled.h5 \
   reward_model.model_path=../checkpoints/rewind_metaworld_epoch_1.pth

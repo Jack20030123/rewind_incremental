@@ -147,9 +147,6 @@ class OfflineEvalCallback(EvalCallback):
     def __init__(self, *args, video_freq, **kwargs):
         super(OfflineEvalCallback, self).__init__(*args, **kwargs)
         self.video_freq = video_freq
-        # we need to overide num_timesteps as EvalCallback uses it to align the built in logger's x-axis
-        # we are using wandb so now we're using self.n_calls as the step for everything
-        self.num_timesteps = lambda x: self.n_calls  # convert num_timst
 
     def _on_step(self) -> bool:
         # print(self.n_calls, self.n_calls % self.video_freq)
@@ -320,6 +317,7 @@ class OfflineEvalCallback(EvalCallback):
         # print(self.eval_env.envs[0].chunk)
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
             print("Evaluating")
+            eval_step = int(self.model.num_timesteps)
             # Sync training and eval env if there is VecNormalize
             if self.model.get_vec_normalize_env() is not None:
                 try:
@@ -379,15 +377,27 @@ class OfflineEvalCallback(EvalCallback):
             self.logger.record("eval/mean_reward", float(mean_reward))
             self.logger.record("eval/mean_ep_length", mean_ep_length)
 
+            eval_metrics = {
+                "eval/mean_reward": float(mean_reward),
+                "eval/mean_ep_length": float(mean_ep_length),
+                "time/total_timesteps": eval_step,
+            }
+
             if len(self._is_success_buffer) > 0:
                 success_rate = np.mean(self._is_success_buffer)
                 if self.verbose >= 1:
                     print(f"Success rate: {100 * success_rate:.2f}%")
                 self.logger.record("eval/success_rate", success_rate)
+                eval_metrics["eval/success_rate"] = float(success_rate)
+
+            # Log eval metrics directly to W&B at the training timestep so the curve
+            # appears even if the custom logger path misses these records.
+            if wandb.run is not None:
+                wandb.log(eval_metrics, step=eval_step)
 
             # Dump log so the evaluation results are printed with the correct timestep
-            self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
-            self.logger.dump(self.num_timesteps)
+            self.logger.record("time/total_timesteps", eval_step, exclude="tensorboard")
+            self.logger.dump(eval_step)
 
             if mean_reward > self.best_mean_reward:
                 if self.verbose >= 1:
