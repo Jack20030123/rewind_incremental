@@ -30,7 +30,7 @@ export WANDB_SILENT=true
 cd /home1/chunheil/ReWiND/metaworld_policy_training
 
 SEED=${SEED:-42}
-GROUP=${GROUP:-rewind_iql_faucet-close-v2}
+GROUP=${GROUP:-rewind_iql_window-close-v2}
 LOGDIR=${LOGDIR:-./logs/${GROUP}/seed_${SEED}}
 
 python train_policy.py \
@@ -42,6 +42,6 @@ python train_policy.py \
   logging.log_dir="${LOGDIR}" \
   offline_training.offline_training_steps=15000 \
   general_training.seed=${SEED} \
-  environment.env_id=faucet-close-v2 \
+  environment.env_id=window-close-v2 \
   offline_training.offline_h5_path=../datasets/metaworld_labeled.h5 \
   reward_model.model_path=../checkpoints/rewind_metaworld_epoch_1.pth
