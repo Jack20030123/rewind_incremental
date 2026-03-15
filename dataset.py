@@ -153,9 +153,28 @@ class ReWiNDVideoDataset(Dataset):
         progress = np.concatenate([progress, reverse_progress], axis=0)
 
         # 5. UNIFORM FREEZING (per-frame)
-        for t in range(1, video_frames.shape[0]):
+        # Insert duplicates into the post-rewind sequence instead of overwriting
+        # frames in place. This preserves the original temporal order and delays
+        # later frames, while keeping the final sequence length unchanged.
+        original_length = video_frames.shape[0]
+        frozen_frames = [video_frames[0]]
+        frozen_progress = [progress[0]]
+
+        for t in range(1, original_length):
+            if len(frozen_frames) >= original_length:
+                break
+
             if random.random() < freeze_ratio:
-                video_frames[t] = video_frames[t - 1]
+                frozen_frames.append(frozen_frames[-1].copy())
+                frozen_progress.append(frozen_progress[-1])
+                if len(frozen_frames) >= original_length:
+                    break
+
+            frozen_frames.append(video_frames[t])
+            frozen_progress.append(progress[t])
+
+        video_frames = np.stack(frozen_frames[:original_length], axis=0)
+        progress = np.asarray(frozen_progress[:original_length])
 
         # 6. convert to tensor
         video_frames = th.from_numpy(video_frames).float()
