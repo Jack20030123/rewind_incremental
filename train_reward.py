@@ -123,8 +123,9 @@ def main(args):
                                 epoch=epoch)
         
         # save checkpoint
-        if os.path.exists("checkpoints") is False:
-            os.mkdir("checkpoints")
+        checkpoint_dir = "checkpoints_freeze" if args.use_freeze else "checkpoints"
+        if os.path.exists(checkpoint_dir) is False:
+            os.mkdir(checkpoint_dir)
         save_dict = {
             "args": args,
             "model_state_dict": rewind_model.state_dict(),
@@ -132,7 +133,7 @@ def main(args):
             "scheduler_state_dict": scheduler.state_dict(),
             "epoch": epoch,
         }
-        torch.save(save_dict, f"checkpoints/rewind_{args.extra_data_type}_epoch_{epoch}.pth")
+        torch.save(save_dict, f"{checkpoint_dir}/rewind_{args.extra_data_type}_epoch_{epoch}.pth")
         
 
 
@@ -165,4 +166,3 @@ if __name__ == "__main__":
     argparser.add_argument('--eval_max_samples', type=int, default=-1)
     args = argparser.parse_args()
     main(args)
-
