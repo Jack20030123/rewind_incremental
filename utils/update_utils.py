@@ -3,6 +3,9 @@ import wandb
 import math
 from torch.optim import Optimizer
 from torch.nn.functional import mse_loss
+
+from utils.progress_utils import compute_directional_penalty
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class CosineWithMinLRScheduler(torch.optim.lr_scheduler._LRScheduler):
@@ -34,22 +37,27 @@ def train_step_fn(args, batch, rewind_model, optimizer, scheduler):
     positive_text_array = torch.cat([openx_data["text_array"].squeeze(1), extra_data["text_array"].squeeze(1)], dim=0).to(device).float()
     # positive_text_array = torch.cat([openx_data["text_array"].squeeze(1), extra_data["text_array"].squeeze()], dim = 0).to(device).float()              
     positive_progress = torch.cat([openx_data["progress"], extra_data["progress"]], dim = 0).to(device)
+    positive_goal_distance = torch.cat([openx_data["goal_distance"], extra_data["goal_distance"]], dim = 0).to(device).float()
 
     negative_video_array_1 = torch.roll(positive_video_array, extra_len, 0)
     negative_text_array_1 = positive_text_array.clone()
     negative_progress_1 = torch.zeros_like(positive_progress)
+    negative_goal_distance_1 = torch.zeros_like(positive_goal_distance)
 
     openx_pos_video_array = torch.cat([positive_video_array[:openx_len], negative_video_array_1[:openx_len]], dim = 0)
     openx_pos_text_array = torch.cat([positive_text_array[:openx_len], negative_text_array_1[:openx_len]], dim = 0)
     openx_pos_progress = torch.cat([positive_progress[:openx_len], negative_progress_1[:openx_len]], dim = 0)
+    openx_pos_goal_distance = torch.cat([positive_goal_distance[:openx_len], negative_goal_distance_1[:openx_len]], dim = 0)
         
     extra_pos_video_array = torch.cat([positive_video_array[openx_len:], negative_video_array_1[openx_len:]], dim = 0)
     extra_pos_text_array = torch.cat([positive_text_array[openx_len:], negative_text_array_1[openx_len:]], dim = 0)
     extra_pos_progress = torch.cat([positive_progress[openx_len:], negative_progress_1[openx_len:]], dim = 0)
+    extra_pos_goal_distance = torch.cat([positive_goal_distance[openx_len:], negative_goal_distance_1[openx_len:]], dim = 0)
 
     video_array = torch.cat([openx_pos_video_array, extra_pos_video_array], dim = 0)
     text_array = torch.cat([openx_pos_text_array, extra_pos_text_array], dim = 0)
     progress = torch.cat([openx_pos_progress, extra_pos_progress], dim = 0).float()
+    goal_distance = torch.cat([openx_pos_goal_distance, extra_pos_goal_distance], dim = 0).float()
 
     openx_len = len(openx_pos_video_array)
     extra_len = len(extra_pos_video_array)
@@ -60,6 +68,7 @@ def train_step_fn(args, batch, rewind_model, optimizer, scheduler):
     compressed_extra_class_label = extra_data["class_label"][:, 0].float()
     openx_target = torch.cat([torch.ones(openx_len // 2), torch.zeros(openx_len // 2)], dim=0).to(device)
     extra_target = torch.cat([compressed_extra_class_label, torch.zeros(extra_len // 2)], dim=0).to(device)
+    positive_sequence_mask = torch.cat([openx_target, extra_target], dim=0).bool()
 
     # Get predictions from classifier
     progress_pred = rewind_model(video_embedding, text_array)
@@ -82,17 +91,30 @@ def train_step_fn(args, batch, rewind_model, optimizer, scheduler):
     rest_extra_progress_pred = extra_progress_pred[~extra_target.bool()]
     rest_extra_progress_target = extra_progress_target[~extra_target.bool()]
 
-    openx_progress_loss = mse_loss(valid_openx_progress_pred[:,1:].squeeze(), valid_openx_progress_target[:,1:])
-    extra_progress_loss = mse_loss(valid_extra_progress_pred[:,1:].squeeze(), valid_extra_progress_target[:,1:])
-    rest_openx_progress_loss = mse_loss(rest_openx_progress_pred[:,1:].squeeze(), rest_openx_progress_target[:,1:])
-    rest_extra_progress_loss = mse_loss(rest_extra_progress_pred[:,1:].squeeze(), rest_extra_progress_target[:,1:])
+    openx_progress_loss = mse_loss(valid_openx_progress_pred[:,1:].squeeze(-1), valid_openx_progress_target[:,1:])
+    extra_progress_loss = mse_loss(valid_extra_progress_pred[:,1:].squeeze(-1), valid_extra_progress_target[:,1:])
+    rest_openx_progress_loss = mse_loss(rest_openx_progress_pred[:,1:].squeeze(-1), rest_openx_progress_target[:,1:])
+    rest_extra_progress_loss = mse_loss(rest_extra_progress_pred[:,1:].squeeze(-1), rest_extra_progress_target[:,1:])
 
     total_len = len(openx_progress_pred) + len(extra_progress_pred) + len(rest_openx_progress_pred) + len(rest_extra_progress_pred)
 
-    loss = openx_progress_loss * len(openx_progress_pred) / total_len \
-            + extra_progress_loss * len(extra_progress_pred) / total_len \
-            + rest_openx_progress_loss * len(rest_openx_progress_pred) / total_len \
-            + rest_extra_progress_loss * len(rest_extra_progress_pred) / total_len
+    progress_loss = openx_progress_loss * len(openx_progress_pred) / total_len \
+                    + extra_progress_loss * len(extra_progress_pred) / total_len \
+                    + rest_openx_progress_loss * len(rest_openx_progress_pred) / total_len \
+                    + rest_extra_progress_loss * len(rest_extra_progress_pred) / total_len
+
+    directional_loss = progress_loss.new_tensor(0.0)
+    directional_violation_rate = progress_loss.new_tensor(0.0)
+    away_step_rate = progress_loss.new_tensor(0.0)
+    if args.lambda_dir > 0:
+        directional_loss, directional_violation_rate, away_step_rate = compute_directional_penalty(
+            reward_predictions=progress_pred[positive_sequence_mask],
+            goal_distances=goal_distance[positive_sequence_mask],
+            tau_away=args.tau_away,
+            margin=args.margin,
+        )
+
+    loss = (args.lambda_prog * progress_loss) + (args.lambda_dir * directional_loss)
 
     loss.backward()
     if args.clip_grad:
@@ -103,9 +125,16 @@ def train_step_fn(args, batch, rewind_model, optimizer, scheduler):
 
     # Log all metrics
     wandb_log = {
-        "train/progress_loss": loss.item(),
+        "train/loss": loss.item(),
+        "train/progress_loss": progress_loss.item(),
+        "train/directional_loss": directional_loss.item(),
+        "train/directional_violation_rate": directional_violation_rate.item(),
+        "train/away_step_rate": away_step_rate.item(),
+        "train/progress_target_mean": progress[positive_sequence_mask].mean().item(),
+        "train/progress_target_start": progress[positive_sequence_mask][:, 0].mean().item(),
+        "train/progress_target_end": progress[positive_sequence_mask][:, -1].mean().item(),
+        "train/goal_distance_mean": goal_distance[positive_sequence_mask].mean().item(),
         "lr": optimizer.param_groups[0]["lr"],
     }
     wandb.log(wandb_log)
     return loss.item()
-

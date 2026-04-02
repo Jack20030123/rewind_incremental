@@ -36,9 +36,9 @@ def main(args):
     WANDB_ENTITY_NAME = args.wandb_entity
     WANDB_PROJECT_NAME = args.wandb_project
 
-    experiment_name = "ReWiND_Release_" + str(args.extra_data_type)
+    experiment_name = "ReWiND_Release_" + str(args.extra_data_type) + "_" + args.progress_target_type
 
-    group_name = "ReWind_Release_" + args.extra_data_type 
+    group_name = "ReWind_Release_" + args.extra_data_type + "_" + args.progress_target_type
     run = wandb.init(
         entity=WANDB_ENTITY_NAME,
         project=WANDB_PROJECT_NAME,
@@ -123,7 +123,10 @@ def main(args):
                                 epoch=epoch)
         
         # save checkpoint
-        checkpoint_dir = "checkpoints_freeze" if args.use_freeze else "checkpoints"
+        if args.progress_target_type == "dino_goal_distance":
+            checkpoint_dir = "checkpoints_dino_freeze" if args.use_freeze else "checkpoints_dino"
+        else:
+            checkpoint_dir = "checkpoints_freeze" if args.use_freeze else "checkpoints"
         if os.path.exists(checkpoint_dir) is False:
             os.mkdir(checkpoint_dir)
         save_dict = {
@@ -164,5 +167,11 @@ if __name__ == "__main__":
     argparser.add_argument('--use_freeze', action='store_true')
     argparser.add_argument('--freeze_ratio', type=float, default=0.4)
     argparser.add_argument('--eval_max_samples', type=int, default=-1)
+    argparser.add_argument('--progress_target_type', type=str, choices=["linear", "dino_goal_distance"], default="dino_goal_distance")
+    argparser.add_argument('--goal_k', type=int, default=3)
+    argparser.add_argument('--lambda_prog', type=float, default=1.0)
+    argparser.add_argument('--lambda_dir', type=float, default=0.25)
+    argparser.add_argument('--tau_away', type=float, default=0.01)
+    argparser.add_argument('--margin', type=float, default=0.0)
     args = argparser.parse_args()
     main(args)
