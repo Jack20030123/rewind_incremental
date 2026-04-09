@@ -125,6 +125,8 @@ def main(args):
         # save checkpoint
         if args.progress_target_type == "dino_goal_distance":
             checkpoint_dir = "checkpoints_dino_freeze" if args.use_freeze else "checkpoints_dino"
+        elif args.progress_target_type == "optical_flow":
+            checkpoint_dir = "checkpoints_flow_freeze" if args.use_freeze else "checkpoints_flow"
         else:
             checkpoint_dir = "checkpoints_freeze" if args.use_freeze else "checkpoints"
         if os.path.exists(checkpoint_dir) is False:
@@ -167,11 +169,12 @@ if __name__ == "__main__":
     argparser.add_argument('--use_freeze', action='store_true')
     argparser.add_argument('--freeze_ratio', type=float, default=0.4)
     argparser.add_argument('--eval_max_samples', type=int, default=-1)
-    argparser.add_argument('--progress_target_type', type=str, choices=["linear", "dino_goal_distance"], default="dino_goal_distance")
+    argparser.add_argument('--progress_target_type', type=str, choices=["linear", "dino_goal_distance", "optical_flow"], default="dino_goal_distance")
     argparser.add_argument('--goal_k', type=int, default=3)
     argparser.add_argument('--lambda_prog', type=float, default=1.0)
     argparser.add_argument('--lambda_dir', type=float, default=0.25)
     argparser.add_argument('--tau_away', type=float, default=0.01)
     argparser.add_argument('--margin', type=float, default=0.0)
+    argparser.add_argument('--flow_missing_fallback', type=str, choices=["linear", "error"], default="linear")
     args = argparser.parse_args()
     main(args)

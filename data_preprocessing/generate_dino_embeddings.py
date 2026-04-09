@@ -10,6 +10,7 @@ import numpy as np
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModel
 from utils.processing_utils import dino_load_image, mean_pooling
+from utils.progress_utils import compute_frame_diff_progress
 from task_annotation import TRAIN_GT_ANN, EVAL_GT_ANN, GENERATE_TRAIN_ANN, EVAL_ANN_1, EVAL_ANN_2, EVAL_ANN_3
 TARGET_PATH = "./"
 DINO_BATCH_SIZE = 32
@@ -27,7 +28,7 @@ minilm_model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L12-v
 )
 
 
-def embedding_videos(h5_path, new_h5_path, split = "train"):
+def embedding_videos(h5_path, new_h5_path, split = "train", motion_signal_type="frame_diff"):
     '''
     this function is used to process images to dino embeddings
     '''
@@ -44,6 +45,10 @@ def embedding_videos(h5_path, new_h5_path, split = "train"):
         for idx in list(group.keys()):
             videos = np.asarray(group[idx])
             sampled_images = [videos[i] for i in range(len(videos))]
+
+            if motion_signal_type != "frame_diff":
+                raise ValueError(f"Unsupported motion_signal_type: {motion_signal_type}")
+            flow_progress, flow_signal = compute_frame_diff_progress(sampled_images)
 
             with torch.inference_mode():
                 # batch it
@@ -73,6 +78,14 @@ def embedding_videos(h5_path, new_h5_path, split = "train"):
             new_h5_file[key].create_dataset(
                 idx,
                 data=episode_image_embeddings,
+            )
+            new_h5_file[key].create_dataset(
+                f"flow_progress_{idx}",
+                data=flow_progress,
+            )
+            new_h5_file[key].create_dataset(
+                f"flow_signal_{idx}",
+                data=flow_signal,
             )
 
         # Add language embedding
@@ -115,12 +128,22 @@ if __name__ == "__main__":
     argparser.add_argument("--video_path_folder", type=str, default="datasets")
     argparser.add_argument("--target_path", type=str, default="datasets")
     argparser.add_argument("--max_length", type=int, default=32)
+    argparser.add_argument("--motion_signal_type", type=str, choices=["frame_diff"], default="frame_diff")
     args = argparser.parse_args()
 
     train_video_path = os.path.join(args.video_path_folder, f"metaworld_centercrop_{args.max_length}_train.h5")
     eval_video_path = os.path.join(args.video_path_folder, f"metaworld_centercrop_{args.max_length}_eval.h5")
-    embedding_videos(train_video_path, os.path.join(args.target_path, "metaworld_embeddings_train.h5"), split = "train")
-    embedding_videos(eval_video_path, os.path.join(args.target_path, "metaworld_embeddings_eval.h5"), split = "eval")
+    embedding_videos(
+        train_video_path,
+        os.path.join(args.target_path, "metaworld_embeddings_train.h5"),
+        split="train",
+        motion_signal_type=args.motion_signal_type,
+    )
+    embedding_videos(
+        eval_video_path,
+        os.path.join(args.target_path, "metaworld_embeddings_eval.h5"),
+        split="eval",
+        motion_signal_type=args.motion_signal_type,
+    )
     print("Finished processing dino embeddings!")
     
-

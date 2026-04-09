@@ -19,13 +19,36 @@ class ReWiNDVideoDataset(Dataset):
         self.args = args
         self.keys = list(self.h5_file.keys())
         self.sample_neg = sample_neg
+        self._warned_missing_flow = False
 
     def _sample_trajectory_name(self, data_group):
-        traj_lists = list(data_group.keys())
-        traj_lists = [traj for traj in traj_lists if "lang" not in traj]
+        traj_lists = [
+            traj
+            for traj in data_group.keys()
+            if "lang" not in traj
+            and not traj.startswith("flow_progress_")
+            and not traj.startswith("flow_signal_")
+        ]
         return random.choice(traj_lists)
 
-    def _compute_progress_target(self, video_frames, linear_progress, goal_source_frames):
+    def _load_flow_progress(self, data_group, traj_name):
+        flow_key = f"flow_progress_{traj_name}"
+        if flow_key in data_group:
+            return np.asarray(data_group[flow_key], dtype=np.float32)
+
+        fallback_target = getattr(self.args, "flow_missing_fallback", "linear")
+        if fallback_target == "error":
+            raise KeyError(f"Missing {flow_key} in dataset group")
+
+        if not self._warned_missing_flow:
+            print(
+                f"[ReWiNDVideoDataset] Missing {flow_key}; falling back to linear progress "
+                f"for optical_flow targets."
+            )
+            self._warned_missing_flow = True
+        return None
+
+    def _compute_progress_target(self, video_frames, linear_progress, goal_source_frames, precomputed_progress=None):
         if self.args.progress_target_type == "linear":
             progress = np.asarray(linear_progress, dtype=np.float32)
             goal_distance = np.zeros_like(progress, dtype=np.float32)
@@ -35,6 +58,12 @@ class ReWiNDVideoDataset(Dataset):
                 goal_source_embeddings=goal_source_frames,
                 goal_k=self.args.goal_k,
             )
+        elif self.args.progress_target_type == "optical_flow":
+            if precomputed_progress is None:
+                progress = np.asarray(linear_progress, dtype=np.float32)
+            else:
+                progress = np.asarray(precomputed_progress, dtype=np.float32)
+            goal_distance = np.zeros_like(progress, dtype=np.float32)
         else:
             raise ValueError(f"Unsupported progress target type: {self.args.progress_target_type}")
         return progress, goal_distance
@@ -71,6 +100,7 @@ class ReWiNDVideoDataset(Dataset):
     def sample_video_feature(self, data_group):
         random_name = self._sample_trajectory_name(data_group)
         progress_dataset = np.asarray(data_group[random_name]) # all video data
+        full_flow_progress = self._load_flow_progress(data_group, random_name)
         
         start_idx = random.randint(0, len(progress_dataset)-3)
         end_idx = random.randint(start_idx+3, len(progress_dataset))
@@ -84,7 +114,9 @@ class ReWiNDVideoDataset(Dataset):
             video_frames=video_frames,
             linear_progress=video_progress,
             goal_source_frames=video_frames,
+            precomputed_progress=None if full_flow_progress is None else full_flow_progress[start_idx:end_idx],
         )
+        rewind_mask = np.zeros(video_progress.shape[0], dtype=np.float32)
 
         video_frames = th.from_numpy(video_frames).float()
 
@@ -96,13 +128,17 @@ class ReWiNDVideoDataset(Dataset):
             goal_distance = np.expand_dims(goal_distance, axis=1)
             goal_distance = self.padding_video(goal_distance, self.args.max_length).detach().cpu().numpy()
             goal_distance = np.squeeze(goal_distance, axis=1)
-        return video_frames, video_progress, np.ones(video_progress.shape[0]), goal_distance
+            rewind_mask = np.expand_dims(rewind_mask, axis=1)
+            rewind_mask = self.padding_video(rewind_mask, self.args.max_length).detach().cpu().numpy()
+            rewind_mask = np.squeeze(rewind_mask, axis=1)
+        return video_frames, video_progress, np.ones(video_progress.shape[0]), goal_distance, rewind_mask
 
 
     def sample_reverse_video_feature(self, data_group):
         random_name = self._sample_trajectory_name(data_group)
 
         progress_dataset = np.asarray(data_group[random_name]) # all video data
+        full_flow_progress = self._load_flow_progress(data_group, random_name)
 
         start_idx = random.randint(0, len(progress_dataset)//2)
 
@@ -117,6 +153,10 @@ class ReWiNDVideoDataset(Dataset):
         progress_idx = np.arange(0, video_frames.shape[0], dtype=np.float32) + 1
         progress = progress_idx / len(full_frames)
         forward_frames = video_frames.copy()
+        if full_flow_progress is None:
+            forward_progress_target = None
+        else:
+            forward_progress_target = full_flow_progress[start_idx:end_idx]
 
         # rewind the video
         # reverse_frame = video_frames[::-1][1:]
@@ -129,10 +169,23 @@ class ReWiNDVideoDataset(Dataset):
 
         video_frames = np.concatenate([video_frames, reverse_frame], axis=0)
         progress = np.concatenate([progress, reverse_progress], axis=0)
-        progress, goal_distance = self._compute_progress_target(
-            video_frames=video_frames,
-            linear_progress=progress,
-            goal_source_frames=forward_frames,
+        if self.args.progress_target_type == "optical_flow" and forward_progress_target is not None:
+            reverse_target_progress = forward_progress_target[::-1][1:selected_end_point]
+            progress = np.concatenate([forward_progress_target, reverse_target_progress], axis=0).astype(np.float32)
+            goal_distance = np.zeros_like(progress, dtype=np.float32)
+        else:
+            progress, goal_distance = self._compute_progress_target(
+                video_frames=video_frames,
+                linear_progress=progress,
+                goal_source_frames=forward_frames,
+                precomputed_progress=None,
+            )
+        rewind_mask = np.concatenate(
+            [
+                np.zeros(forward_frames.shape[0], dtype=np.float32),
+                np.ones(reverse_frame.shape[0], dtype=np.float32),
+            ],
+            axis=0,
         )
 
         video_frames = th.from_numpy(video_frames).float()
@@ -146,11 +199,14 @@ class ReWiNDVideoDataset(Dataset):
             goal_distance = np.expand_dims(goal_distance, axis=1)
             goal_distance = self.padding_video(goal_distance, self.args.max_length).detach().cpu().numpy()
             goal_distance = np.squeeze(goal_distance, axis=1)
+            rewind_mask = np.expand_dims(rewind_mask, axis=1)
+            rewind_mask = self.padding_video(rewind_mask, self.args.max_length).detach().cpu().numpy()
+            rewind_mask = np.squeeze(rewind_mask, axis=1)
             if len(video_frames.shape) == 1:
                 import pdb; pdb.set_trace()
-            return video_frames, progress, np.ones(progress.shape[0]), goal_distance
+            return video_frames, progress, np.ones(progress.shape[0]), goal_distance, rewind_mask
         else:
-            return video_frames, progress, np.ones(progress.shape[0]), goal_distance
+            return video_frames, progress, np.ones(progress.shape[0]), goal_distance, rewind_mask
         
     # ReWiND + freeze (2/8)
     def sample_reverse_uniform_frozen_video_feature(self, data_group, freeze_ratio=0.4):
@@ -158,6 +214,7 @@ class ReWiNDVideoDataset(Dataset):
         random_name = self._sample_trajectory_name(data_group)
 
         progress_dataset = np.asarray(data_group[random_name])  # (N, D)
+        full_flow_progress = self._load_flow_progress(data_group, random_name)
 
         # 2. sample forward segment
         start_idx = random.randint(0, len(progress_dataset) // 2)
@@ -179,9 +236,23 @@ class ReWiNDVideoDataset(Dataset):
         selected_end_point = random.randint(2, len(video_frames))
         reverse_frame = video_frames[::-1][1:selected_end_point]
         reverse_progress = progress[::-1][1:selected_end_point]
+        if full_flow_progress is None:
+            forward_progress_target = None
+        else:
+            forward_progress_target = full_flow_progress[start_idx:end_idx]
+            reverse_target_progress = forward_progress_target[::-1][1:selected_end_point]
 
         video_frames = np.concatenate([video_frames, reverse_frame], axis=0)
         progress = np.concatenate([progress, reverse_progress], axis=0)
+        rewind_mask = np.concatenate(
+            [
+                np.zeros(forward_frames.shape[0], dtype=np.float32),
+                np.ones(reverse_frame.shape[0], dtype=np.float32),
+            ],
+            axis=0,
+        )
+        if self.args.progress_target_type == "optical_flow" and full_flow_progress is not None:
+            progress = np.concatenate([forward_progress_target, reverse_target_progress], axis=0).astype(np.float32)
 
         # 5. UNIFORM FREEZING (per-frame)
         # Insert duplicates into the post-rewind sequence instead of overwriting
@@ -190,6 +261,13 @@ class ReWiNDVideoDataset(Dataset):
         original_length = video_frames.shape[0]
         frozen_frames = [video_frames[0]]
         frozen_progress = [progress[0]]
+        frozen_goal_distance = [0.0]
+        frozen_rewind_mask = [rewind_mask[0]]
+
+        if not (self.args.progress_target_type == "optical_flow" and full_flow_progress is not None):
+            goal_distance_source = None
+        else:
+            goal_distance_source = np.zeros_like(progress, dtype=np.float32)
 
         for t in range(1, original_length):
             if len(frozen_frames) >= original_length:
@@ -198,19 +276,29 @@ class ReWiNDVideoDataset(Dataset):
             if random.random() < freeze_ratio:
                 frozen_frames.append(frozen_frames[-1].copy())
                 frozen_progress.append(frozen_progress[-1])
+                frozen_goal_distance.append(frozen_goal_distance[-1])
+                frozen_rewind_mask.append(frozen_rewind_mask[-1])
                 if len(frozen_frames) >= original_length:
                     break
 
             frozen_frames.append(video_frames[t])
             frozen_progress.append(progress[t])
+            if goal_distance_source is not None:
+                frozen_goal_distance.append(goal_distance_source[t])
+            frozen_rewind_mask.append(rewind_mask[t])
 
         video_frames = np.stack(frozen_frames[:original_length], axis=0)
         progress = np.asarray(frozen_progress[:original_length])
-        progress, goal_distance = self._compute_progress_target(
-            video_frames=video_frames,
-            linear_progress=progress,
-            goal_source_frames=forward_frames,
-        )
+        if self.args.progress_target_type == "optical_flow" and full_flow_progress is not None:
+            goal_distance = np.asarray(frozen_goal_distance[:original_length], dtype=np.float32)
+        else:
+            progress, goal_distance = self._compute_progress_target(
+                video_frames=video_frames,
+                linear_progress=progress,
+                goal_source_frames=forward_frames,
+                precomputed_progress=None,
+            )
+        rewind_mask = np.asarray(frozen_rewind_mask[:original_length], dtype=np.float32)
 
         # 6. convert to tensor
         video_frames = th.from_numpy(video_frames).float()
@@ -225,8 +313,11 @@ class ReWiNDVideoDataset(Dataset):
             goal_distance = np.expand_dims(goal_distance, axis=1)
             goal_distance = self.padding_video(goal_distance, self.args.max_length).detach().cpu().numpy()
             goal_distance = np.squeeze(goal_distance, axis=1)
+            rewind_mask = np.expand_dims(rewind_mask, axis=1)
+            rewind_mask = self.padding_video(rewind_mask, self.args.max_length).detach().cpu().numpy()
+            rewind_mask = np.squeeze(rewind_mask, axis=1)
 
-        return video_frames, progress, np.ones(progress.shape[0]), goal_distance
+        return video_frames, progress, np.ones(progress.shape[0]), goal_distance, rewind_mask
 
 
 
@@ -267,19 +358,19 @@ class ReWiNDVideoDataset(Dataset):
             if random_num < self.args.rewind_ratio:
                 # freeze
                 if self.args.use_freeze:
-                    video_array, progress, class_label, goal_distance = \
+                    video_array, progress, class_label, goal_distance, rewind_mask = \
                         self.sample_reverse_uniform_frozen_video_feature(
                             data_group, self.args.freeze_ratio
                         )
                 else:
-                    video_array, progress, class_label, goal_distance = \
+                    video_array, progress, class_label, goal_distance, rewind_mask = \
                         self.sample_reverse_video_feature(data_group)
             else:
-                video_array, progress, class_label, goal_distance = self.sample_video_feature(data_group)
+                video_array, progress, class_label, goal_distance, rewind_mask = self.sample_video_feature(data_group)
                 
         else:
             
-            video_array, progress, class_label, goal_distance = self.sample_video_feature(data_group)
+            video_array, progress, class_label, goal_distance, rewind_mask = self.sample_video_feature(data_group)
 
         # sample text sample
         if self.sample_neg:
@@ -287,6 +378,7 @@ class ReWiNDVideoDataset(Dataset):
                 text_array = self.sample_negative_text_feature(key)
                 progress = np.zeros(progress.shape)
                 goal_distance = np.zeros(goal_distance.shape)
+                rewind_mask = np.zeros(rewind_mask.shape)
                 class_label = np.zeros(class_label.shape)
             else:
                 text_array = self.sample_text_feature(data_group)
@@ -299,6 +391,7 @@ class ReWiNDVideoDataset(Dataset):
             "video_array": video_array,
             "progress": progress,
             "goal_distance": goal_distance,
+            "rewind_mask": rewind_mask,
             "class_label": class_label
         }
         return  output_dict

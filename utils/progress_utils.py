@@ -67,3 +67,29 @@ def compute_directional_penalty(reward_predictions, goal_distances, tau_away=0.0
     loss = penalty.sum() / away_count.clamp(min=1)
     violation_rate = ((reward_deltas > margin) & away_mask).float().sum() / away_count
     return loss, violation_rate.detach(), away_rate.detach()
+
+
+def compute_frame_diff_progress(frames, eps=1e-8):
+    frames = np.asarray(frames, dtype=np.float32)
+    if frames.ndim != 4:
+        raise ValueError("frames must have shape [T, H, W, C]")
+
+    if frames.shape[0] == 0:
+        return np.zeros((0,), dtype=np.float32), np.zeros((0,), dtype=np.float32)
+
+    if frames.shape[0] == 1:
+        return np.zeros((1,), dtype=np.float32), np.zeros((1,), dtype=np.float32)
+
+    normalized_frames = frames / 255.0 if frames.max() > 1.0 else frames
+    frame_diffs = np.abs(normalized_frames[1:] - normalized_frames[:-1])
+    motion_signal = frame_diffs.mean(axis=(1, 2, 3))
+    motion_signal = np.concatenate([np.zeros((1,), dtype=np.float32), motion_signal.astype(np.float32)], axis=0)
+
+    cumulative_motion = np.cumsum(motion_signal, axis=0)
+    total_motion = float(cumulative_motion[-1])
+    if total_motion < eps:
+        progress = np.zeros_like(cumulative_motion, dtype=np.float32)
+    else:
+        progress = cumulative_motion / total_motion
+
+    return progress.astype(np.float32), motion_signal.astype(np.float32)

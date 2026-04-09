@@ -8,6 +8,37 @@ from utils.progress_utils import compute_directional_penalty
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
+def _summarize_progress_deltas(progress_targets, rewind_mask):
+    deltas = progress_targets[:, 1:] - progress_targets[:, :-1]
+    rewind_steps = rewind_mask[:, 1:] > 0.5
+    forward_steps = ~rewind_steps
+
+    zero = deltas.new_tensor(0.0)
+
+    if forward_steps.any():
+        forward_delta_mean = deltas[forward_steps].mean()
+        forward_decrease_rate = (deltas[forward_steps] < 0).float().mean()
+    else:
+        forward_delta_mean = zero
+        forward_decrease_rate = zero
+
+    if rewind_steps.any():
+        rewind_delta_mean = deltas[rewind_steps].mean()
+        rewind_non_decreasing_rate = (deltas[rewind_steps] >= 0).float().mean()
+    else:
+        rewind_delta_mean = zero
+        rewind_non_decreasing_rate = zero
+
+    rewind_step_rate = rewind_steps.float().mean() if rewind_steps.numel() > 0 else zero
+    return (
+        forward_delta_mean.detach(),
+        forward_decrease_rate.detach(),
+        rewind_delta_mean.detach(),
+        rewind_non_decreasing_rate.detach(),
+        rewind_step_rate.detach(),
+    )
+
 class CosineWithMinLRScheduler(torch.optim.lr_scheduler._LRScheduler):
     def __init__(self, optimizer: Optimizer, max_steps: int, max_lr: float, min_lr: float, last_epoch: int = -1):
         self.max_steps = max_steps
@@ -38,26 +69,31 @@ def train_step_fn(args, batch, rewind_model, optimizer, scheduler):
     # positive_text_array = torch.cat([openx_data["text_array"].squeeze(1), extra_data["text_array"].squeeze()], dim = 0).to(device).float()              
     positive_progress = torch.cat([openx_data["progress"], extra_data["progress"]], dim = 0).to(device)
     positive_goal_distance = torch.cat([openx_data["goal_distance"], extra_data["goal_distance"]], dim = 0).to(device).float()
+    positive_rewind_mask = torch.cat([openx_data["rewind_mask"], extra_data["rewind_mask"]], dim = 0).to(device).float()
 
     negative_video_array_1 = torch.roll(positive_video_array, extra_len, 0)
     negative_text_array_1 = positive_text_array.clone()
     negative_progress_1 = torch.zeros_like(positive_progress)
     negative_goal_distance_1 = torch.zeros_like(positive_goal_distance)
+    negative_rewind_mask_1 = torch.zeros_like(positive_rewind_mask)
 
     openx_pos_video_array = torch.cat([positive_video_array[:openx_len], negative_video_array_1[:openx_len]], dim = 0)
     openx_pos_text_array = torch.cat([positive_text_array[:openx_len], negative_text_array_1[:openx_len]], dim = 0)
     openx_pos_progress = torch.cat([positive_progress[:openx_len], negative_progress_1[:openx_len]], dim = 0)
     openx_pos_goal_distance = torch.cat([positive_goal_distance[:openx_len], negative_goal_distance_1[:openx_len]], dim = 0)
+    openx_pos_rewind_mask = torch.cat([positive_rewind_mask[:openx_len], negative_rewind_mask_1[:openx_len]], dim = 0)
         
     extra_pos_video_array = torch.cat([positive_video_array[openx_len:], negative_video_array_1[openx_len:]], dim = 0)
     extra_pos_text_array = torch.cat([positive_text_array[openx_len:], negative_text_array_1[openx_len:]], dim = 0)
     extra_pos_progress = torch.cat([positive_progress[openx_len:], negative_progress_1[openx_len:]], dim = 0)
     extra_pos_goal_distance = torch.cat([positive_goal_distance[openx_len:], negative_goal_distance_1[openx_len:]], dim = 0)
+    extra_pos_rewind_mask = torch.cat([positive_rewind_mask[openx_len:], negative_rewind_mask_1[openx_len:]], dim = 0)
 
     video_array = torch.cat([openx_pos_video_array, extra_pos_video_array], dim = 0)
     text_array = torch.cat([openx_pos_text_array, extra_pos_text_array], dim = 0)
     progress = torch.cat([openx_pos_progress, extra_pos_progress], dim = 0).float()
     goal_distance = torch.cat([openx_pos_goal_distance, extra_pos_goal_distance], dim = 0).float()
+    rewind_mask = torch.cat([openx_pos_rewind_mask, extra_pos_rewind_mask], dim = 0).float()
 
     openx_len = len(openx_pos_video_array)
     extra_len = len(extra_pos_video_array)
@@ -114,6 +150,17 @@ def train_step_fn(args, batch, rewind_model, optimizer, scheduler):
             margin=args.margin,
         )
 
+    (
+        forward_delta_mean,
+        forward_decrease_rate,
+        rewind_delta_mean,
+        rewind_non_decreasing_rate,
+        rewind_step_rate,
+    ) = _summarize_progress_deltas(
+        progress_targets=progress[positive_sequence_mask],
+        rewind_mask=rewind_mask[positive_sequence_mask],
+    )
+
     loss = (args.lambda_prog * progress_loss) + (args.lambda_dir * directional_loss)
 
     loss.backward()
@@ -134,6 +181,11 @@ def train_step_fn(args, batch, rewind_model, optimizer, scheduler):
         "train/progress_target_start": progress[positive_sequence_mask][:, 0].mean().item(),
         "train/progress_target_end": progress[positive_sequence_mask][:, -1].mean().item(),
         "train/goal_distance_mean": goal_distance[positive_sequence_mask].mean().item(),
+        "train/forward_progress_delta_mean": forward_delta_mean.item(),
+        "train/forward_progress_decrease_rate": forward_decrease_rate.item(),
+        "train/rewind_progress_delta_mean": rewind_delta_mean.item(),
+        "train/rewind_progress_non_decreasing_rate": rewind_non_decreasing_rate.item(),
+        "train/rewind_step_rate": rewind_step_rate.item(),
         "lr": optimizer.param_groups[0]["lr"],
     }
     wandb.log(wandb_log)
