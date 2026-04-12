@@ -1,0 +1,51 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=rewind_rl_flow_freeze
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-task=1
+#SBATCH --constraint="a100|l40s|v100|a40"
+#SBATCH --mem=32G
+#SBATCH --time=24:00:00
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate rewind
+
+if [ -d /usr/lib/nvidia ]; then
+  export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
+fi
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home1/chunheil/.mujoco/mujoco210/bin
+
+if [ -f "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}" ]; then
+  source "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}"
+fi
+
+: "${WANDB_API_KEY:?WANDB_API_KEY is not set. Export it before sbatch or store it in \$HOME/.config/wandb/env.}"
+export WANDB_API_KEY
+export WANDB_ENTITY="${WANDB_ENTITY:-lincolnlam-university-of-southern-california}"
+export WANDB_SILENT=true
+
+cd /home1/chunheil/ReWiND/metaworld_policy_training
+
+SEED=${SEED:-42}
+GROUP=${GROUP:-rewind_flow_freeze_iql_window-close-v2}
+LOGDIR=${LOGDIR:-./logs/${GROUP}/seed_${SEED}}
+OFFLINE_H5_PATH=${OFFLINE_H5_PATH:-../datasets/metaworld_labeled_flow_freeze.h5}
+REWARD_MODEL_PATH=${REWARD_MODEL_PATH:-../checkpoints_flow_freeze/rewind_metaworld_epoch_1.pth}
+
+python train_policy.py \
+  metaworld=off_on_15 \
+  algorithm=wsrl_iql \
+  reward=rewind_metaworld \
+  logging.wandb_entity_name="${WANDB_ENTITY}" \
+  logging.wandb_group_name="${GROUP}" \
+  logging.log_dir="${LOGDIR}" \
+  offline_training.offline_training_steps=15000 \
+  general_training.seed=${SEED} \
+  environment.env_id=window-close-v2 \
+  offline_training.offline_h5_path="${OFFLINE_H5_PATH}" \
+  reward_model.model_path="${REWARD_MODEL_PATH}"
