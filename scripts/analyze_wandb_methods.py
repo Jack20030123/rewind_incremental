@@ -1,5 +1,6 @@
 import argparse
 import math
+from datetime import datetime, timezone
 from statistics import mean, pstdev
 
 import wandb
@@ -75,6 +76,18 @@ def _aggregate_method(run_summaries):
     }
 
 
+def _parse_run_time(run):
+    for attr in ("created_at", "heartbeat_at", "updated_at"):
+        value = getattr(run, attr, None)
+        if not value:
+            continue
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Aggregate W&B eval metrics across methods and seeds.")
     parser.add_argument("--entity", required=True, help="W&B entity/team name")
@@ -92,6 +105,12 @@ def main():
         action="store_true",
         help="Include runs that are still running. By default only finished runs are used.",
     )
+    parser.add_argument(
+        "--max-runs-per-method",
+        type=int,
+        default=6,
+        help="Use only the most recent N matching runs per method before aggregation.",
+    )
     args = parser.parse_args()
 
     method_groups = dict(DEFAULT_METHOD_GROUPS)
@@ -107,6 +126,7 @@ def main():
     print(f"Project: {repo}")
     print(f"Metric: {args.metric}")
     print(f"Last-N window: {args.last_n}")
+    print(f"Max runs per method: {args.max_runs_per_method}")
     print("")
 
     method_results = {}
@@ -120,6 +140,7 @@ def main():
         runs = list(collected_runs.values())
         if not args.include_running:
             runs = [run for run in runs if run.state == "finished"]
+        runs = sorted(runs, key=_parse_run_time, reverse=True)[: args.max_runs_per_method]
 
         run_summaries = []
         for run in runs:
