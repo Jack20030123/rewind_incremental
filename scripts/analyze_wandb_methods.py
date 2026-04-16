@@ -6,10 +6,10 @@ import wandb
 
 
 DEFAULT_METHOD_GROUPS = {
-    "rewind": "rewind_iql_window-close-v2",
-    "rewind_freeze": "rewind_freeze_iql_window-close-v2",
-    "flow": "rewind_flow_iql_window-close-v2",
-    "flow_freeze": "rewind_flow_freeze_iql_window-close-v2",
+    "rewind": ["rewind_iql_window-close-v2"],
+    "rewind_freeze": ["rewind_freeze_iql_window-close-v2"],
+    "flow": ["rewind_flow_iql_window-close-v2", "flow_window-close-v2"],
+    "flow_freeze": ["rewind_flow_freeze_iql_window-close-v2", "flow_freeze_window-close-v2"],
 }
 
 
@@ -99,7 +99,7 @@ def main():
         if "=" not in item:
             raise ValueError(f"Invalid --method-group value: {item}")
         method, group = item.split("=", 1)
-        method_groups[method] = group
+        method_groups[method] = [value.strip() for value in group.split(",") if value.strip()]
 
     api = wandb.Api()
     repo = f"{args.entity}/{args.project}"
@@ -111,9 +111,13 @@ def main():
 
     method_results = {}
 
-    for method, group_name in method_groups.items():
-        filters = {"group": group_name}
-        runs = list(api.runs(repo, filters=filters))
+    for method, group_names in method_groups.items():
+        collected_runs = {}
+        for group_name in group_names:
+            filters = {"group": group_name}
+            for run in api.runs(repo, filters=filters):
+                collected_runs[run.id] = run
+        runs = list(collected_runs.values())
         if not args.include_running:
             runs = [run for run in runs if run.state == "finished"]
 
@@ -124,7 +128,7 @@ def main():
                 run_summaries.append(summary)
 
         method_results[method] = {
-            "group": group_name,
+            "group": ",".join(group_names),
             "runs": run_summaries,
             "aggregate": _aggregate_method(run_summaries) if run_summaries else None,
         }
