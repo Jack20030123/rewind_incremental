@@ -101,7 +101,12 @@ def build_bridge_h5(
     max_episodes,
     camera_key,
 ):
+    import tensorflow as tf
     import tensorflow_datasets as tfds
+
+    tf.config.set_visible_devices([], "GPU")
+    tf.config.threading.set_intra_op_parallelism_threads(1)
+    tf.config.threading.set_inter_op_parallelism_threads(1)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dino_model = torch.hub.load(
@@ -114,7 +119,16 @@ def build_bridge_h5(
         "sentence-transformers/all-MiniLM-L12-v2"
     ).to(device)
 
-    ds = tfds.load(dataset_name, split=split, data_dir=data_dir)
+    read_config = tfds.ReadConfig(
+        interleave_cycle_length=1,
+        shuffle_seed=0,
+    )
+    ds = tfds.load(dataset_name, split=split, data_dir=data_dir, read_config=read_config)
+    options = tf.data.Options()
+    options.threading.private_threadpool_size = 1
+    options.threading.max_intra_op_parallelism = 1
+    options.experimental_deterministic = True
+    ds = ds.with_options(options)
     if max_episodes > 0:
         ds = ds.take(max_episodes)
 

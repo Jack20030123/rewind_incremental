@@ -14,6 +14,9 @@ datasets/metaworld_labeled.h5
 # Datasets
 datasets/
 downloaded_data/
+bridge_dataset/
+tfds_datasets/
+datasets/bridge_embeddings*.h5
 
 # Python build artifacts
 *.egg-info/
@@ -28,5 +31,4 @@ metaworld_policy_training/mjrl/
 wandb/
 utils/__pycache__
 data
-
 
