@@ -40,6 +40,20 @@ MAX_LENGTH=${MAX_LENGTH:-32}
 CAMERA_KEY=${CAMERA_KEY:-image}
 SPLIT=${SPLIT:-train}
 
+LANGUAGE_TABLE_ROOT="${DATA_DIR}/language_table"
+if [ -d "${LANGUAGE_TABLE_ROOT}/0.0.1" ]; then
+  TFRECORD_COUNT_V1=$(find "${LANGUAGE_TABLE_ROOT}/0.1.0" -name '*.tfrecord*' 2>/dev/null | wc -l)
+  TFRECORD_COUNT_V0=$(find "${LANGUAGE_TABLE_ROOT}/0.0.1" -name '*.tfrecord*' 2>/dev/null | wc -l)
+  if [ "${TFRECORD_COUNT_V1}" = "0" ] && [ "${TFRECORD_COUNT_V0}" -gt 0 ]; then
+    if [ -d "${LANGUAGE_TABLE_ROOT}/0.1.0" ] && [ ! -L "${LANGUAGE_TABLE_ROOT}/0.1.0" ]; then
+      mv "${LANGUAGE_TABLE_ROOT}/0.1.0" "${LANGUAGE_TABLE_ROOT}/0.1.0.metadata_stub"
+    fi
+    if [ ! -e "${LANGUAGE_TABLE_ROOT}/0.1.0" ]; then
+      ln -s "${LANGUAGE_TABLE_ROOT}/0.0.1" "${LANGUAGE_TABLE_ROOT}/0.1.0"
+    fi
+  fi
+fi
+
 python data_preprocessing/generate_openx_bridge_embeddings.py \
   --dataset-name "${DATASET_NAME}" \
   --split "${SPLIT}" \
