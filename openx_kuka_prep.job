@@ -34,6 +34,7 @@ cd /home1/chunheil/ReWiND
 
 DATASET_NAME=${DATASET_NAME:-kuka}
 DATA_DIR=${DATA_DIR:-/scratch1/chunheil}
+BUILDER_DIR=${BUILDER_DIR:-/scratch1/chunheil/kuka/0.1.0}
 OUTPUT_PATH=${OUTPUT_PATH:-datasets/kuka_embeddings_train.h5}
 MAX_EPISODES=${MAX_EPISODES:-1000}
 MAX_LENGTH=${MAX_LENGTH:-32}
@@ -44,6 +45,7 @@ python data_preprocessing/generate_openx_bridge_embeddings.py \
   --dataset-name "${DATASET_NAME}" \
   --split "${SPLIT}" \
   --data-dir "${DATA_DIR}" \
+  --builder-dir "${BUILDER_DIR}" \
   --output-path "${OUTPUT_PATH}" \
   --max-length "${MAX_LENGTH}" \
   --max-episodes "${MAX_EPISODES}" \

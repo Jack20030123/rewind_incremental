@@ -96,6 +96,7 @@ def build_bridge_h5(
     dataset_name,
     split,
     data_dir,
+    builder_dir,
     output_path,
     max_length,
     max_episodes,
@@ -123,7 +124,16 @@ def build_bridge_h5(
         interleave_cycle_length=1,
         shuffle_seed=0,
     )
-    ds = tfds.load(dataset_name, split=split, data_dir=data_dir, read_config=read_config)
+    if builder_dir:
+        builder = tfds.builder_from_directory(builder_dir)
+        ds = builder.as_dataset(split=split, read_config=read_config)
+    else:
+        ds = tfds.load(
+            dataset_name,
+            split=split,
+            data_dir=data_dir,
+            read_config=read_config,
+        )
     options = tf.data.Options()
     options.threading.private_threadpool_size = 1
     options.threading.max_intra_op_parallelism = 1
@@ -191,6 +201,7 @@ def main():
     parser.add_argument("--dataset-name", type=str, default="bridge")
     parser.add_argument("--split", type=str, default="train")
     parser.add_argument("--data-dir", type=str, default=None)
+    parser.add_argument("--builder-dir", type=str, default=None)
     parser.add_argument(
         "--output-path", type=str, default="datasets/bridge_embeddings_train.h5"
     )
@@ -203,6 +214,7 @@ def main():
         dataset_name=args.dataset_name,
         split=args.split,
         data_dir=args.data_dir,
+        builder_dir=args.builder_dir,
         output_path=args.output_path,
         max_length=args.max_length,
         max_episodes=args.max_episodes,
