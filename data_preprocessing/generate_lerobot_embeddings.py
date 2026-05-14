@@ -22,13 +22,37 @@ from data_preprocessing.generate_openx_bridge_embeddings import (
     sample_frames,
 )
 from utils.progress_utils import compute_frame_diff_progress
-from utils.processing_utils import mean_pooling
 
 
 def _normalize_camera_key(camera_key):
     if camera_key.startswith("observation.images."):
         return camera_key
     return f"observation.images.{camera_key}"
+
+
+def _has_lerobot_data(dataset_dir):
+    return bool(list((dataset_dir / "data").glob("**/*.parquet")))
+
+
+def _resolve_dataset_dir(dataset_dir):
+    dataset_dir = Path(dataset_dir)
+    if _has_lerobot_data(dataset_dir):
+        return dataset_dir
+
+    candidates = []
+    for child in dataset_dir.iterdir() if dataset_dir.exists() else []:
+        if child.is_dir() and _has_lerobot_data(child):
+            candidates.append(child)
+
+    if len(candidates) == 1:
+        return candidates[0]
+
+    found = sorted(str(path) for path in dataset_dir.glob("**/data/**/*.parquet"))[:20]
+    hint = "\n".join(found) if found else "No parquet files found below this path."
+    raise FileNotFoundError(
+        f"No LeRobot parquet files found under {dataset_dir}/data. "
+        f"Set DATASET_DIR to the directory containing data/, meta/, and videos/.\n{hint}"
+    )
 
 
 def _read_parquet_files(paths):
@@ -162,10 +186,10 @@ def build_lerobot_h5(
     max_episodes,
     camera_key,
 ):
-    dataset_dir = Path(dataset_dir)
+    dataset_dir = _resolve_dataset_dir(dataset_dir)
     camera_col = _normalize_camera_key(camera_key)
 
-    data_files = sorted((dataset_dir / "data").glob("chunk-*/*.parquet"))
+    data_files = sorted((dataset_dir / "data").glob("**/*.parquet"))
     data = _read_parquet_files(data_files)
     if camera_col not in data.columns and not (dataset_dir / "videos" / camera_col).exists():
         raise KeyError(
