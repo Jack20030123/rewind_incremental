@@ -20,7 +20,7 @@ export TF_NUM_INTRAOP_THREADS=1 TF_NUM_INTEROP_THREADS=1 TF_ENABLE_ONEDNN_OPTS=0
 cd /home1/chunheil/ReWiND
 
 DATASET_NAME=${DATASET_NAME:-stanford_kuka_multimodal_dataset_converted_externally_to_rlds}
-DATASET_DIR=${DATASET_DIR:-/scratch1/chunheil/lerobot/stanford_kuka_multimodal_dataset_converted_externally_to_rlds}
+DATASET_DIR=${DATASET_DIR:-/scratch1/chunheil/lerobot/stanford_kuka_multimodal_dataset}
 OUTPUT_PATH=${OUTPUT_PATH:-datasets/stanford_kuka_multimodal_dataset_converted_externally_to_rlds_lerobot_embeddings_train.h5}
 MAX_EPISODES=${MAX_EPISODES:-1000}
 MAX_LENGTH=${MAX_LENGTH:-32}
