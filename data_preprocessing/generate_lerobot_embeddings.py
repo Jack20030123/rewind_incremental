@@ -113,27 +113,45 @@ def _row_to_video_ref(value):
     return None
 
 
+def _video_roots(dataset_dir, camera_col):
+    roots = [dataset_dir / "videos" / camera_col]
+    prefix = "observation.images."
+    if camera_col.startswith(prefix):
+        roots.append(dataset_dir / "videos" / camera_col[len(prefix) :])
+    return roots
+
+
 def _resolve_video_path(dataset_dir, camera_col, ref, source_parquet=None):
     if ref and ref.get("path"):
         path = Path(ref["path"])
         return path if path.is_absolute() else dataset_dir / path
 
-    video_root = dataset_dir / "videos" / camera_col
-    if not video_root.exists():
-        raise FileNotFoundError(f"Missing LeRobot video directory: {video_root}")
+    video_roots = [root for root in _video_roots(dataset_dir, camera_col) if root.exists()]
+    if not video_roots:
+        expected = ", ".join(str(root) for root in _video_roots(dataset_dir, camera_col))
+        raise FileNotFoundError(f"Missing LeRobot video directory. Expected one of: {expected}")
 
-    if source_parquet:
-        match = re.search(r"chunk-(\d+)/file-(\d+)\.parquet$", source_parquet)
-        if match:
-            candidate = (
-                video_root
-                / f"chunk-{int(match.group(1)):03d}"
-                / f"file-{int(match.group(2)):03d}.mp4"
-            )
-            if candidate.exists():
-                return candidate
+    for video_root in video_roots:
+        if source_parquet:
+            match = re.search(r"chunk-(\d+)/(?:file[-_]|episode_)(\d+)\.parquet$", source_parquet)
+            if match:
+                for stem in ("file", "episode"):
+                    candidate = (
+                        video_root
+                        / f"chunk-{int(match.group(1)):03d}"
+                        / f"{stem}_{int(match.group(2)):06d}.mp4"
+                    )
+                    if candidate.exists():
+                        return candidate
+                candidate = (
+                    video_root
+                    / f"chunk-{int(match.group(1)):03d}"
+                    / f"file-{int(match.group(2)):03d}.mp4"
+                )
+                if candidate.exists():
+                    return candidate
 
-    videos = sorted(video_root.glob("chunk-*/*.mp4"))
+    videos = sorted(video for root in video_roots for video in root.glob("chunk-*/*.mp4"))
     if len(videos) == 1:
         return videos[0]
     raise FileNotFoundError(
@@ -191,7 +209,7 @@ def build_lerobot_h5(
 
     data_files = sorted((dataset_dir / "data").glob("**/*.parquet"))
     data = _read_parquet_files(data_files)
-    if camera_col not in data.columns and not (dataset_dir / "videos" / camera_col).exists():
+    if camera_col not in data.columns and not any(root.exists() for root in _video_roots(dataset_dir, camera_col)):
         raise KeyError(
             f"Could not find camera '{camera_col}'. Available columns include: "
             f"{[c for c in data.columns if 'image' in c or 'video' in c][:20]}"

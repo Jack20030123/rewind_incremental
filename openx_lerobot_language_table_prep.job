@@ -24,6 +24,6 @@ DATASET_DIR=${DATASET_DIR:-/scratch1/chunheil/lerobot/language_table}
 OUTPUT_PATH=${OUTPUT_PATH:-datasets/language_table_lerobot_embeddings_train.h5}
 MAX_EPISODES=${MAX_EPISODES:-1000}
 MAX_LENGTH=${MAX_LENGTH:-32}
-CAMERA_KEY=${CAMERA_KEY:-image}
+CAMERA_KEY=${CAMERA_KEY:-rgb}
 
 python data_preprocessing/generate_lerobot_embeddings.py --dataset-name "${DATASET_NAME}" --dataset-dir "${DATASET_DIR}" --output-path "${OUTPUT_PATH}" --max-length "${MAX_LENGTH}" --max-episodes "${MAX_EPISODES}" --camera-key "${CAMERA_KEY}"
