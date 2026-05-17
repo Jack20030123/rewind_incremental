@@ -77,17 +77,16 @@ python train_reward.py --wandb_entity YOUR_WANDB_ENTITY(Required) \
 
 ### Reward Model Variants: Freeze and Optical Flow
 
-The original ReWiND setup trains on forward and rewound DINOv2 embedding sequences and uses DINO goal-distance progress targets by default (`--progress_target_type dino_goal_distance`).
-This repository also includes two MetaWorld-focused variants:
+Two MetaWorld-focused reward-model variants are implemented on top of the existing ReWiND training path:
 
-- **Freeze augmentation** (`--use_freeze`): inserts repeated frames into rewound training sequences. This teaches the reward model that visual stalling should not create artificial task progress.
-- **Optical-flow progress targets** (`--progress_target_type optical_flow`): replaces DINO goal-distance progress with a scalar motion/progress target computed from frame differences in raw MetaWorld videos.
+- **Freeze augmentation** (`--use_freeze`): inserts repeated frames into rewound sequences so stalled visual states do not imply additional progress.
+- **Optical-flow progress targets** (`--progress_target_type optical_flow`): uses scalar frame-difference progress targets (`flow_progress_<traj_id>`) instead of DINO goal-distance targets.
 
-OpenX optical-flow preprocessing is experimental/WIP. For now, use optical-flow training primarily with MetaWorld data that was preprocessed from raw frames.
+OpenX optical-flow preprocessing is experimental/WIP. The supported optical-flow path below is for MetaWorld.
 
 ### MetaWorld Optical-Flow Preprocessing
 
-Optical-flow targets are currently implemented for MetaWorld through frame-difference progress, not dense flow fields. The preprocessing requires raw MetaWorld frames because the scalar `flow_progress_<traj_id>` and `flow_signal_<traj_id>` datasets are computed before DINO-only embeddings are saved.
+Optical-flow targets are currently implemented for MetaWorld as scalar frame-difference progress, not dense flow fields. Raw MetaWorld frames are required because `flow_progress_<traj_id>` and `flow_signal_<traj_id>` are computed during DINO embedding generation.
 
 ```bash
 python data_generation/metaworld_generation.py --save_path datasets
@@ -95,12 +94,12 @@ python data_preprocessing/metaworld_center_crop.py --video_path datasets --targe
 python data_preprocessing/generate_dino_embeddings.py --video_path_folder datasets --target_path datasets --motion_signal_type frame_diff
 ```
 
-Expected MetaWorld files:
+Expected files:
 - Raw trajectories: `datasets/metaworld_generation.h5`
 - Cropped frames: `datasets/metaworld_centercrop_32_train.h5`, `datasets/metaworld_centercrop_32_eval.h5`
 - Embeddings and flow targets: `datasets/metaworld_embeddings_train.h5`, `datasets/metaworld_embeddings_eval.h5`
 
-The embedding H5 groups should contain trajectory datasets (`0`, `1`, ...), `minilm_lang_embedding`, and matching `flow_progress_<traj_id>` / `flow_signal_<traj_id>` datasets.
+For optical-flow training, each embedding H5 group should contain trajectory datasets (`0`, `1`, ...), `minilm_lang_embedding`, and matching `flow_progress_<traj_id>` / `flow_signal_<traj_id>` datasets.
 
 ### Training Commands
 
@@ -120,7 +119,7 @@ python train_reward.py --wandb_entity YOUR_WANDB_ENTITY \
 --worker 1
 ```
 
-Important flags: `--use_freeze` enables frozen-frame augmentation, and `--freeze_ratio` controls how often frames are duplicated inside rewound sequences. This uses the default DINO goal-distance progress target. It requires the standard MetaWorld embedding files and the preprocessed OpenX embedding file used by the original ReWiND training loop.
+Key additions: `--use_freeze` enables frozen-frame augmentation; `--freeze_ratio` controls the duplicate-frame rate. Uses the default DINO goal-distance target and standard ReWiND dataset inputs.
 
 Checkpoints are saved to:
 ```bash
@@ -142,7 +141,7 @@ python train_reward.py --wandb_entity YOUR_WANDB_ENTITY \
 --worker 1
 ```
 
-Important flags: `--progress_target_type optical_flow` makes the dataset loader read `flow_progress_<traj_id>` from the MetaWorld embedding H5. By default, missing flow targets fall back to linear progress (`--flow_missing_fallback linear`); use `--flow_missing_fallback error` when debugging dataset coverage. This variant requires MetaWorld embeddings generated from raw frames with `generate_dino_embeddings.py`.
+Key addition: `--progress_target_type optical_flow` makes the loader read `flow_progress_<traj_id>`. Use `--flow_missing_fallback error` when checking that all H5 trajectories have flow targets.
 
 Checkpoints are saved to:
 ```bash
@@ -166,7 +165,7 @@ python train_reward.py --wandb_entity YOUR_WANDB_ENTITY \
 --worker 1
 ```
 
-This combines frozen-frame augmentation with frame-difference progress targets. It has the same raw-frame MetaWorld preprocessing requirement as the optical-flow variant.
+Combines frozen-frame augmentation with frame-difference progress targets. Requires MetaWorld embeddings generated from raw frames.
 
 Checkpoints are saved to:
 ```bash
@@ -184,10 +183,10 @@ python data_preprocessing/metaworld_label_reward.py --reward_model_path CHECKPOI
 ```
 
 Note:
-- `OUTPUT_PATH`: The labeled dataset file path (default: `datasets/metaworld_labeled.h5`). This will be used as `<OUTPUT_PATH>` in [Offline Training](#offline-training) and [Online Training](#online-training) below.
 - `CHECKPOINT_PATH`: a trained reward model checkpoint, for example `checkpoints_flow_freeze/rewind_metaworld_epoch_19.pth`.
 - `GENERATION_PATH`: raw MetaWorld trajectories, normally `datasets/metaworld_generation.h5`.
 - `EMBEDDING_TARGET_PATH`: MetaWorld training embeddings, normally `datasets/metaworld_embeddings_train.h5`; this is used for language embeddings during relabeling.
+- `OUTPUT_PATH`: labeled policy dataset, for example `datasets/metaworld_labeled_flow_freeze.h5`. Use this as `offline_training.offline_h5_path`.
 
 Example:
 ```bash
