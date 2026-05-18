@@ -129,11 +129,53 @@ def _row_to_video_ref(value):
 
 
 def _video_roots(dataset_dir, camera_col):
-    roots = [dataset_dir / "videos" / camera_col]
+    videos_dir = dataset_dir / "videos"
+    roots = [videos_dir / camera_col]
     prefix = "observation.images."
+    camera_names = [camera_col]
     if camera_col.startswith(prefix):
-        roots.append(dataset_dir / "videos" / camera_col[len(prefix) :])
-    return roots
+        roots.append(videos_dir / camera_col[len(prefix) :])
+        camera_names.append(camera_col[len(prefix) :])
+
+    if videos_dir.exists():
+        for camera_name in camera_names:
+            roots.extend(path for path in videos_dir.glob(f"**/{camera_name}") if path.is_dir())
+
+    seen = set()
+    unique_roots = []
+    for root in roots:
+        if root not in seen:
+            unique_roots.append(root)
+            seen.add(root)
+    return unique_roots
+
+
+def _candidate_video_names(file_index):
+    return [
+        f"file_{file_index:06d}.mp4",
+        f"episode_{file_index:06d}.mp4",
+        f"file-{file_index:03d}.mp4",
+    ]
+
+
+def _candidate_video_paths(dataset_dir, camera_col, source_parquet):
+    if not source_parquet:
+        return []
+    match = re.search(r"chunk-(\d+)/(?:file[-_]|episode_)(\d+)\.parquet$", source_parquet)
+    if not match:
+        return []
+
+    chunk_index = int(match.group(1))
+    file_index = int(match.group(2))
+    chunk_name = f"chunk-{chunk_index:03d}"
+    names = _candidate_video_names(file_index)
+    candidates = []
+    for root in _video_roots(dataset_dir, camera_col):
+        for name in names:
+            candidates.append(root / chunk_name / name)
+            candidates.append(root / name)
+            candidates.append(dataset_dir / "videos" / chunk_name / root.name / name)
+    return candidates
 
 
 def _resolve_video_path(dataset_dir, camera_col, ref, source_parquet=None):
@@ -146,27 +188,11 @@ def _resolve_video_path(dataset_dir, camera_col, ref, source_parquet=None):
         expected = ", ".join(str(root) for root in _video_roots(dataset_dir, camera_col))
         raise FileNotFoundError(f"Missing LeRobot video directory. Expected one of: {expected}")
 
-    for video_root in video_roots:
-        if source_parquet:
-            match = re.search(r"chunk-(\d+)/(?:file[-_]|episode_)(\d+)\.parquet$", source_parquet)
-            if match:
-                for stem in ("file", "episode"):
-                    candidate = (
-                        video_root
-                        / f"chunk-{int(match.group(1)):03d}"
-                        / f"{stem}_{int(match.group(2)):06d}.mp4"
-                    )
-                    if candidate.exists():
-                        return candidate
-                candidate = (
-                    video_root
-                    / f"chunk-{int(match.group(1)):03d}"
-                    / f"file-{int(match.group(2)):03d}.mp4"
-                )
-                if candidate.exists():
-                    return candidate
+    for candidate in _candidate_video_paths(dataset_dir, camera_col, source_parquet):
+        if candidate.exists():
+            return candidate
 
-    videos = sorted(video for root in video_roots for video in root.glob("chunk-*/*.mp4"))
+    videos = sorted(video for root in video_roots for video in root.glob("**/*.mp4"))
     if len(videos) == 1:
         return videos[0]
     raise FileNotFoundError(
@@ -227,10 +253,13 @@ def build_lerobot_h5(
         raise FileNotFoundError(f"No parquet files found under {dataset_dir / 'data'}")
 
     first_data = pd.read_parquet(data_files[0])
-    if camera_col not in first_data.columns and not any(root.exists() for root in _video_roots(dataset_dir, camera_col)):
+    video_roots = _video_roots(dataset_dir, camera_col)
+    if camera_col not in first_data.columns and not any(root.exists() for root in video_roots):
+        video_dirs = sorted(str(path.relative_to(dataset_dir)) for path in (dataset_dir / "videos").glob("**/*") if path.is_dir())[:30]
         raise KeyError(
             f"Could not find camera '{camera_col}'. Available columns include: "
-            f"{[c for c in first_data.columns if 'image' in c or 'video' in c][:20]}"
+            f"{[c for c in first_data.columns if 'image' in c or 'video' in c][:20]}. "
+            f"Available video dirs include: {video_dirs}"
         )
     del first_data
 

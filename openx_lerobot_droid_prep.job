@@ -36,7 +36,7 @@ DATASET_DIR=${DATASET_DIR:-/scratch1/chunheil/lerobot/droid}
 OUTPUT_PATH=${OUTPUT_PATH:-datasets/droid_lerobot_embeddings_train.h5}
 MAX_EPISODES=${MAX_EPISODES:-1000}
 MAX_LENGTH=${MAX_LENGTH:-32}
-CAMERA_KEY=${CAMERA_KEY:-exterior_image_1_left}
+CAMERA_KEY=${CAMERA_KEY:-exterior_2_left}
 
 python data_preprocessing/generate_lerobot_embeddings.py \
   --dataset-name "${DATASET_NAME}" \
