@@ -66,6 +66,21 @@ def _read_parquet_files(paths):
     return pd.concat(frames, ignore_index=True)
 
 
+def _iter_episode_rows(data_files):
+    for path in data_files:
+        data = pd.read_parquet(path)
+        data["_source_parquet"] = str(path)
+
+        if "episode_index" in data.columns:
+            grouped = data.groupby("episode_index", sort=True)
+        else:
+            data["_episode_index"] = path.as_posix()
+            grouped = data.groupby("_episode_index", sort=True)
+
+        for _, rows in grouped:
+            yield rows
+
+
 def _load_tasks(dataset_dir):
     tasks_path = dataset_dir / "meta" / "tasks.parquet"
     if not tasks_path.exists():
@@ -208,18 +223,16 @@ def build_lerobot_h5(
     camera_col = _normalize_camera_key(camera_key)
 
     data_files = sorted((dataset_dir / "data").glob("**/*.parquet"))
-    data = _read_parquet_files(data_files)
-    if camera_col not in data.columns and not any(root.exists() for root in _video_roots(dataset_dir, camera_col)):
+    if not data_files:
+        raise FileNotFoundError(f"No parquet files found under {dataset_dir / 'data'}")
+
+    first_data = pd.read_parquet(data_files[0])
+    if camera_col not in first_data.columns and not any(root.exists() for root in _video_roots(dataset_dir, camera_col)):
         raise KeyError(
             f"Could not find camera '{camera_col}'. Available columns include: "
-            f"{[c for c in data.columns if 'image' in c or 'video' in c][:20]}"
+            f"{[c for c in first_data.columns if 'image' in c or 'video' in c][:20]}"
         )
-
-    if "episode_index" in data.columns:
-        grouped = data.groupby("episode_index", sort=True)
-    else:
-        data["_episode_index"] = 0
-        grouped = data.groupby("_episode_index", sort=True)
+    del first_data
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dino_model = torch.hub.load(
@@ -236,7 +249,8 @@ def build_lerobot_h5(
     per_group_counts = defaultdict(int)
 
     with h5py.File(output_path, "w") as h5_file:
-        for episode_i, (_, rows) in enumerate(tqdm(grouped, desc=f"Processing {dataset_name}")):
+        episodes = _iter_episode_rows(data_files)
+        for episode_i, rows in enumerate(tqdm(episodes, desc=f"Processing {dataset_name}")):
             if max_episodes > 0 and episode_i >= max_episodes:
                 break
             rows = rows.sort_values("frame_index") if "frame_index" in rows.columns else rows

@@ -9,7 +9,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gpus-per-task=1
 #SBATCH --constraint="a100|l40s|v100|a40"
-#SBATCH --mem=48G
+#SBATCH --mem=96G
 #SBATCH --time=24:00:00
 
 source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
