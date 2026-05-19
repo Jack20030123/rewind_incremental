@@ -1,0 +1,49 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=download_utokyo_lerobot
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=16G
+#SBATCH --time=24:00:00
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate /home1/chunheil/miniconda3/envs/rewind
+
+export HF_HOME=${HF_HOME:-/scratch1/chunheil/hf_cache}
+export HF_HUB_CACHE=${HF_HUB_CACHE:-/scratch1/chunheil/hf_cache/hub}
+export LEROBOT_DIR=${LEROBOT_DIR:-/scratch1/chunheil/lerobot}
+export HF_MAX_WORKERS=${HF_MAX_WORKERS:-1}
+export HF_HUB_ENABLE_HF_TRANSFER=0
+
+mkdir -p "${HF_HOME}" "${LEROBOT_DIR}"
+cd /home1/chunheil/ReWiND
+
+python - <<'PY'
+import os
+import time
+from huggingface_hub import snapshot_download
+
+datasets = {
+    "utokyo_pr2_opening_fridge_converted_externally_to_rlds": "lerobot/utokyo_pr2_opening_fridge",
+    "utokyo_xarm_pick_and_place_converted_externally_to_rlds": "lerobot/utokyo_xarm_pick_and_place",
+    "utokyo_xarm_bimanual_converted_externally_to_rlds": "lerobot/utokyo_xarm_bimanual",
+}
+
+base_dir = os.environ["LEROBOT_DIR"]
+max_workers = int(os.environ["HF_MAX_WORKERS"])
+
+for name, repo_id in datasets.items():
+    local_dir = os.path.join(base_dir, name)
+    print(f"Downloading {repo_id} -> {local_dir} with max_workers={max_workers}", flush=True)
+    snapshot_download(
+        repo_id=repo_id,
+        repo_type="dataset",
+        local_dir=local_dir,
+        max_workers=max_workers,
+    )
+    time.sleep(10)
+PY
