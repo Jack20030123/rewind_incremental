@@ -1,0 +1,32 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=download_bridge_official
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=16G
+#SBATCH --time=48:00:00
+
+set -euo pipefail
+
+BRIDGE_DIR=${BRIDGE_DIR:-/scratch1/chunheil/bridge_dataset}
+BRIDGE_URL=${BRIDGE_URL:-https://rail.eecs.berkeley.edu/datasets/bridge_release/data/tfds/bridge_dataset/}
+
+mkdir -p "${BRIDGE_DIR}"
+cd "${BRIDGE_DIR}"
+
+wget \
+  --continue \
+  --recursive \
+  --no-parent \
+  --no-host-directories \
+  --cut-dirs=5 \
+  --reject "index.html*" \
+  --wait=2 \
+  --random-wait \
+  "${BRIDGE_URL}"
+
+find "${BRIDGE_DIR}" -maxdepth 4 -type f | head -50
