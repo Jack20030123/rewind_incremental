@@ -1,0 +1,42 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=download_mask_vit_hf
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=16G
+#SBATCH --time=24:00:00
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate /home1/chunheil/miniconda3/envs/rewind
+
+export HF_HOME=${HF_HOME:-/scratch1/chunheil/hf_cache}
+export HF_HUB_CACHE=${HF_HUB_CACHE:-/scratch1/chunheil/hf_cache/hub}
+export OPENX_HF_DIR=${OPENX_HF_DIR:-/scratch1/chunheil/openx_hf}
+export HF_MAX_WORKERS=${HF_MAX_WORKERS:-1}
+export HF_HUB_ENABLE_HF_TRANSFER=0
+
+mkdir -p "${HF_HOME}" "${OPENX_HF_DIR}"
+cd /home1/chunheil/ReWiND
+
+python - <<'PY'
+import os
+from huggingface_hub import snapshot_download
+
+dataset_name = "stanford_mask_vit_converted_externally_to_rlds"
+repo_id = os.environ.get("OPENX_HF_REPO_ID", "jxu124/OpenX-Embodiment")
+local_dir = os.path.join(os.environ["OPENX_HF_DIR"], dataset_name)
+max_workers = int(os.environ["HF_MAX_WORKERS"])
+
+print(f"Downloading {dataset_name} from {repo_id} -> {local_dir} with max_workers={max_workers}", flush=True)
+snapshot_download(
+    repo_id=repo_id,
+    repo_type="dataset",
+    local_dir=local_dir,
+    allow_patterns=[f"{dataset_name}/**"],
+    max_workers=max_workers,
+)
+PY
