@@ -1,0 +1,62 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=repair_language_gcs
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=24G
+#SBATCH --time=48:00:00
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate /scratch1/chunheil/envs/openx_flow
+
+export DATA_DIR=${DATA_DIR:-/scratch1/chunheil/language_table_fresh}
+export TARGET_DIR=${TARGET_DIR:-/scratch1/chunheil/language_table_fresh/language_table/0.1.0}
+export GCS_SOURCE=${GCS_SOURCE:-gs://gresearch/robotics/language_table/0.1.0}
+
+mkdir -p "${TARGET_DIR}"
+cd /home1/chunheil/ReWiND
+
+python - <<'PY'
+from pathlib import Path
+import os
+
+root = Path(os.environ["TARGET_DIR"])
+for path in sorted(root.glob("language_table-train.tfrecord-[0-9][0-9][0-9][0-9][0-9]")):
+    target = path.with_name(f"{path.name}-of-01024")
+    if not target.exists():
+        print(f"Renaming {path.name} -> {target.name}", flush=True)
+        path.rename(target)
+PY
+
+if command -v gsutil >/dev/null 2>&1; then
+  echo "Using gsutil from ${GCS_SOURCE}"
+  gsutil -m rsync -r "${GCS_SOURCE}" "${TARGET_DIR}"
+else
+  echo "gsutil not found; falling back to TensorFlow Datasets download_and_prepare"
+  python - <<'PY'
+import os
+import tensorflow_datasets as tfds
+
+builder = tfds.builder("language_table:0.1.0", data_dir=os.environ["DATA_DIR"])
+builder.download_and_prepare()
+PY
+fi
+
+python - <<'PY'
+from pathlib import Path
+import os
+
+root = Path(os.environ["TARGET_DIR"])
+missing = [
+    i for i in range(1024)
+    if not (root / f"language_table-train.tfrecord-{i:05d}-of-01024").exists()
+]
+print("num_missing", len(missing), flush=True)
+print("first_missing", missing[:50], flush=True)
+if missing:
+    raise SystemExit("language_table is still incomplete")
+PY
