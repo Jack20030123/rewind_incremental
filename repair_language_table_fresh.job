@@ -1,0 +1,86 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=repair_language_table
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=16G
+#SBATCH --time=48:00:00
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate /home1/chunheil/miniconda3/envs/rewind
+
+export HF_HOME=${HF_HOME:-/scratch1/chunheil/hf_cache}
+export HF_HUB_CACHE=${HF_HUB_CACHE:-/scratch1/chunheil/hf_cache/hub}
+export LANGUAGE_TABLE_DIR=${LANGUAGE_TABLE_DIR:-/scratch1/chunheil/language_table_fresh/language_table/0.1.0}
+export LANGUAGE_TABLE_REPO_ID=${LANGUAGE_TABLE_REPO_ID:-WeiChow/VLATrainingDataset}
+export HF_HUB_ENABLE_HF_TRANSFER=0
+
+mkdir -p "${HF_HOME}" "${LANGUAGE_TABLE_DIR}"
+cd /home1/chunheil/ReWiND
+
+python - <<'PY'
+import os
+from pathlib import Path
+
+from huggingface_hub import hf_hub_download
+
+root = Path(os.environ["LANGUAGE_TABLE_DIR"])
+repo_id = os.environ["LANGUAGE_TABLE_REPO_ID"]
+prefix = "language_table-train.tfrecord"
+num_shards = 1024
+
+print(f"Repairing language_table in {root}", flush=True)
+print(f"Source repo: {repo_id}", flush=True)
+
+for path in sorted(root.glob(f"{prefix}-[0-9][0-9][0-9][0-9][0-9]")):
+    target = path.with_name(f"{path.name}-of-{num_shards:05d}")
+    if not target.exists():
+        print(f"Renaming {path.name} -> {target.name}", flush=True)
+        path.rename(target)
+
+for metadata in ("dataset_info.json", "features.json"):
+    if not (root / metadata).exists():
+        print(f"Downloading metadata {metadata}", flush=True)
+        hf_hub_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            filename=f"language_table/0.1.0/{metadata}",
+            local_dir=root.parents[1],
+            local_dir_use_symlinks=False,
+        )
+
+missing = [
+    i
+    for i in range(num_shards)
+    if not (root / f"{prefix}-{i:05d}-of-{num_shards:05d}").exists()
+]
+print(f"Missing before download: {len(missing)}", flush=True)
+print(f"First missing: {missing[:50]}", flush=True)
+
+for count, shard_id in enumerate(missing, start=1):
+    shard_name = f"{prefix}-{shard_id:05d}-of-{num_shards:05d}"
+    repo_path = f"language_table/0.1.0/{shard_name}"
+    print(f"[{count}/{len(missing)}] Downloading {repo_path}", flush=True)
+    hf_hub_download(
+        repo_id=repo_id,
+        repo_type="dataset",
+        filename=repo_path,
+        local_dir=root.parents[1],
+        local_dir_use_symlinks=False,
+        resume_download=True,
+    )
+
+missing_after = [
+    i
+    for i in range(num_shards)
+    if not (root / f"{prefix}-{i:05d}-of-{num_shards:05d}").exists()
+]
+print(f"Missing after download: {len(missing_after)}", flush=True)
+print(f"First remaining missing: {missing_after[:50]}", flush=True)
+if missing_after:
+    raise SystemExit("language_table is still incomplete")
+PY
