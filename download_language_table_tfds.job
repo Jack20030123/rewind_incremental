@@ -1,0 +1,39 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=download_language_tfds
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=24:00:00
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate /scratch1/chunheil/envs/openx_flow
+
+export TFDS_DATA_DIR=${TFDS_DATA_DIR:-/scratch1/chunheil/language_table_fresh}
+export TFDS_DOWNLOAD_DIR=${TFDS_DOWNLOAD_DIR:-/scratch1/chunheil/tfds_downloads}
+export TFDS_DISABLE_PROGRESS_BAR=1
+export TF_NUM_INTRAOP_THREADS=1
+export TF_NUM_INTEROP_THREADS=1
+
+mkdir -p "${TFDS_DATA_DIR}" "${TFDS_DOWNLOAD_DIR}"
+cd /home1/chunheil/ReWiND
+
+python - <<'PY'
+import os
+import tensorflow_datasets as tfds
+
+data_dir = os.environ["TFDS_DATA_DIR"]
+download_dir = os.environ["TFDS_DOWNLOAD_DIR"]
+
+print(f"Downloading language_table:0.1.0 to {data_dir}", flush=True)
+print(f"TFDS download cache: {download_dir}", flush=True)
+
+builder = tfds.builder("language_table:0.1.0", data_dir=data_dir)
+print(builder.info, flush=True)
+builder.download_and_prepare(download_dir=download_dir)
+print("Finished language_table TFDS download_and_prepare", flush=True)
+PY
