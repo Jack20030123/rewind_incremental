@@ -1,0 +1,20 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=download_tdroid_pour
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=16G
+#SBATCH --time=24:00:00
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate /home1/chunheil/miniconda3/envs/rewind
+export HF_HOME=${HF_HOME:-/scratch1/chunheil/hf_cache}
+export HF_HUB_CACHE=${HF_HUB_CACHE:-/scratch1/chunheil/hf_cache/hub}
+export LEROBOT_DIR=${LEROBOT_DIR:-/scratch1/chunheil/lerobot}
+export HF_MAX_WORKERS=${HF_MAX_WORKERS:-1}
+export HF_HUB_ENABLE_HF_TRANSFER=0
+cd /home1/chunheil/ReWiND
+python data_preprocessing/download_lerobot_candidates.py --dataset tdroid_pour_corn_in_pot
