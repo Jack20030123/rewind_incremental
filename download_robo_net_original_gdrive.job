@@ -1,0 +1,55 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=download_robonet_orig
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=24:00:00
+
+set -euo pipefail
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate /home1/chunheil/miniconda3/envs/rewind
+
+TARGET_ROOT=${TARGET_ROOT:-/scratch1/chunheil/robonet_original}
+ARCHIVE_PATH=${ARCHIVE_PATH:-${TARGET_ROOT}/robonet_v3.tar.gz}
+FILE_ID=${FILE_ID:-1BkqHzfRkfzgzCfc73NbNnPMK_rg3i1n9}
+EXTRACT=${EXTRACT:-1}
+
+mkdir -p "${TARGET_ROOT}" logs
+
+python - <<'PY'
+try:
+    import gdown  # noqa: F401
+except ImportError as exc:
+    raise SystemExit(
+        "Missing gdown. Install once in the rewind env with: python -m pip install gdown"
+    ) from exc
+PY
+
+if [ ! -s "${ARCHIVE_PATH}" ]; then
+  echo "Downloading original RoboNet archive to ${ARCHIVE_PATH}"
+  python - <<'PY'
+import os
+import gdown
+
+file_id = os.environ["FILE_ID"]
+archive_path = os.environ["ARCHIVE_PATH"]
+url = f"https://drive.google.com/uc?id={file_id}"
+gdown.download(url, archive_path, quiet=False, fuzzy=True)
+PY
+else
+  echo "Archive already exists: ${ARCHIVE_PATH}"
+fi
+
+if [ "${EXTRACT}" = "1" ]; then
+  echo "Extracting ${ARCHIVE_PATH} under ${TARGET_ROOT}"
+  tar -xzf "${ARCHIVE_PATH}" -C "${TARGET_ROOT}"
+fi
+
+echo "Sample extracted files:"
+find "${TARGET_ROOT}" -maxdepth 4 -type f | head -50
