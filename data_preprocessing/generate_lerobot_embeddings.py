@@ -1,4 +1,5 @@
 import argparse
+import io
 import json
 import re
 from collections import defaultdict
@@ -123,8 +124,38 @@ def _episode_instruction(rows, task_map, dataset_name):
 def _row_to_video_ref(value):
     if isinstance(value, dict):
         return value
+    if isinstance(value, str):
+        try:
+            loaded = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return loaded if isinstance(loaded, dict) else None
     if hasattr(value, "as_py"):
         return _row_to_video_ref(value.as_py())
+    return None
+
+
+def _row_to_image(value):
+    if value is None:
+        return None
+    if hasattr(value, "as_py"):
+        return _row_to_image(value.as_py())
+    if isinstance(value, Image.Image):
+        return np.asarray(value.convert("RGB"), dtype=np.uint8)
+    if isinstance(value, np.ndarray):
+        if value.ndim == 3:
+            return np.asarray(value[:, :, :3], dtype=np.uint8)
+        if value.dtype == object and value.size == 1:
+            return _row_to_image(value.item())
+    if isinstance(value, (bytes, bytearray)):
+        return np.asarray(Image.open(io.BytesIO(value)).convert("RGB"), dtype=np.uint8)
+    if isinstance(value, dict):
+        if "bytes" in value and value["bytes"] is not None:
+            return _row_to_image(value["bytes"])
+        if "array" in value and value["array"] is not None:
+            return _row_to_image(np.asarray(value["array"]))
+        if "path" in value or "timestamp" in value or "frame_index" in value:
+            return None
     return None
 
 
@@ -155,13 +186,17 @@ def _candidate_video_names(file_index):
         f"file_{file_index:06d}.mp4",
         f"episode_{file_index:06d}.mp4",
         f"file-{file_index:03d}.mp4",
+        f"episode_{file_index:03d}.mp4",
+        f"episode-{file_index:03d}.mp4",
+        f"{file_index:06d}.mp4",
+        f"{file_index:03d}.mp4",
     ]
 
 
 def _candidate_video_paths(dataset_dir, camera_col, source_parquet):
     if not source_parquet:
         return []
-    match = re.search(r"chunk-(\d+)/(?:file[-_]|episode_)(\d+)\.parquet$", source_parquet)
+    match = re.search(r"chunk-(\d+)/(?:file[-_]|episode[-_]?|)(\d+)\.parquet$", source_parquet)
     if not match:
         return []
 
@@ -220,6 +255,10 @@ def _read_video_frame(video_path, frame_index=None, timestamp=None):
 
 def _load_frame(dataset_dir, row, camera_col):
     value = row[camera_col] if camera_col in row.index else None
+    image = _row_to_image(value)
+    if image is not None:
+        return image
+
     ref = _row_to_video_ref(value)
     if ref:
         frame_index = ref.get("frame_index")

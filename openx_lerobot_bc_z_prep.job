@@ -38,6 +38,11 @@ MAX_EPISODES=${MAX_EPISODES:-1000}
 MAX_LENGTH=${MAX_LENGTH:-32}
 CAMERA_KEY=${CAMERA_KEY:-image}
 
+echo "Checking ${DATASET_DIR}"
+find "${DATASET_DIR}/data" -path '*.parquet' | head -5
+find "${DATASET_DIR}/videos" -maxdepth 4 -type d 2>/dev/null | head -40 || true
+find "${DATASET_DIR}/videos" -name '*.mp4' 2>/dev/null | head -5 || true
+
 python data_preprocessing/generate_lerobot_embeddings.py \
   --dataset-name "${DATASET_NAME}" \
   --dataset-dir "${DATASET_DIR}" \
