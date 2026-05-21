@@ -1,0 +1,27 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=download_droid_gcs
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=72:00:00
+
+set -euo pipefail
+
+SOURCE_URI=${SOURCE_URI:-gs://gresearch/robotics/droid}
+TARGET_DIR=${TARGET_DIR:-/scratch1/chunheil/openx_datasets/droid}
+
+mkdir -p "$(dirname "${TARGET_DIR}")" logs
+
+echo "Checking source: ${SOURCE_URI}"
+gcloud storage ls "${SOURCE_URI}" | head -20
+
+echo "Downloading ${SOURCE_URI} -> ${TARGET_DIR}"
+gcloud storage rsync --recursive "${SOURCE_URI}" "${TARGET_DIR}"
+
+echo "Download/check complete. Sample files:"
+find "${TARGET_DIR}" -maxdepth 4 -type f | head -50

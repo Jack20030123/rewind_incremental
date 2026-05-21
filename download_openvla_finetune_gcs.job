@@ -1,0 +1,71 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=download_openvla_ft
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=24:00:00
+
+set -euo pipefail
+
+SOURCE_ROOT=${SOURCE_ROOT:-gs://gresearch/robotics}
+TARGET_ROOT=${TARGET_ROOT:-/scratch1/chunheil/openx_finetune_datasets}
+DRY_RUN=${DRY_RUN:-0}
+DATASETS=${DATASETS:-"tdroid_carrot_in_bowl tdroid_pour_corn_in_pot tdroid_flip_pot_upright tdroid_move_object_onto_plate tdroid_knock_object_over tdroid_cover_object_with_towel droid_wipe"}
+
+mkdir -p "${TARGET_ROOT}" logs
+
+if command -v gcloud >/dev/null 2>&1; then
+  STORAGE_CLI="gcloud"
+  storage_ls() {
+    gcloud storage ls "$1"
+  }
+  storage_rsync() {
+    gcloud storage rsync --recursive "$1" "$2"
+  }
+elif command -v gsutil >/dev/null 2>&1; then
+  STORAGE_CLI="gsutil"
+  storage_ls() {
+    gsutil ls "$1"
+  }
+  storage_rsync() {
+    gsutil -m rsync -r "$1" "$2"
+  }
+else
+  echo "Neither gcloud nor gsutil is available on PATH."
+  exit 1
+fi
+
+echo "Using storage CLI: ${STORAGE_CLI}"
+
+for dataset in ${DATASETS}; do
+  source_uri="${SOURCE_ROOT}/${dataset}"
+  target_dir="${TARGET_ROOT}/${dataset}"
+
+  echo
+  echo "=== ${dataset} ==="
+  echo "Source: ${source_uri}"
+  echo "Target: ${target_dir}"
+
+  if ! storage_ls "${source_uri}" >/dev/null; then
+    echo "Missing or inaccessible: ${source_uri}"
+    continue
+  fi
+
+  echo "Source exists. Sample listing:"
+  storage_ls "${source_uri}" | head -20
+
+  if [ "${DRY_RUN}" = "1" ]; then
+    echo "DRY_RUN=1, not downloading ${dataset}"
+    continue
+  fi
+
+  mkdir -p "${target_dir}"
+  storage_rsync "${source_uri}" "${target_dir}"
+  echo "Downloaded/synced ${dataset}. Sample local files:"
+  find "${target_dir}" -maxdepth 4 -type f | head -20
+done
