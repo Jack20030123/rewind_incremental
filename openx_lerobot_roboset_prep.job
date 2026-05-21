@@ -36,12 +36,14 @@ DATASET_DIR=${DATASET_DIR:-/scratch1/chunheil/lerobot/roboset}
 OUTPUT_PATH=${OUTPUT_PATH:-datasets/roboset_lerobot_embeddings_train.h5}
 MAX_EPISODES=${MAX_EPISODES:-1000}
 MAX_LENGTH=${MAX_LENGTH:-32}
-CAMERA_KEY=${CAMERA_KEY:-image_left}
+CAMERA_KEY=${CAMERA_KEY:-}
+EXTRACT_DIR=${EXTRACT_DIR:-/scratch1/chunheil/lerobot_extracted/roboset}
 
-python data_preprocessing/generate_lerobot_embeddings.py \
+python data_preprocessing/generate_video_tree_embeddings.py \
   --dataset-name "${DATASET_NAME}" \
   --dataset-dir "${DATASET_DIR}" \
   --output-path "${OUTPUT_PATH}" \
   --max-length "${MAX_LENGTH}" \
   --max-episodes "${MAX_EPISODES}" \
-  --camera-key "${CAMERA_KEY}"
+  --camera-key "${CAMERA_KEY}" \
+  --extract-dir "${EXTRACT_DIR}"
