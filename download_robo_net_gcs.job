@@ -1,0 +1,56 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=download_robo_net_gcs
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=48:00:00
+
+set -euo pipefail
+
+SOURCE_URI=${SOURCE_URI:-gs://gdm-robotics-open-x-embodiment/robo_net}
+TARGET_DIR=${TARGET_DIR:-/scratch1/chunheil/openx_datasets/robo_net}
+DRY_RUN=${DRY_RUN:-0}
+
+mkdir -p "$(dirname "${TARGET_DIR}")" logs
+
+if command -v gcloud >/dev/null 2>&1; then
+  STORAGE_CLI="gcloud"
+  storage_ls() {
+    gcloud storage ls "$1"
+  }
+  storage_rsync() {
+    gcloud storage rsync --recursive "$1" "$2"
+  }
+elif command -v gsutil >/dev/null 2>&1; then
+  STORAGE_CLI="gsutil"
+  storage_ls() {
+    gsutil ls "$1"
+  }
+  storage_rsync() {
+    gsutil -m rsync -r "$1" "$2"
+  }
+else
+  echo "Neither gcloud nor gsutil is available on PATH."
+  exit 1
+fi
+
+echo "Using storage CLI: ${STORAGE_CLI}"
+echo "Checking source: ${SOURCE_URI}"
+storage_ls "${SOURCE_URI}" | head -40
+
+if [ "${DRY_RUN}" = "1" ]; then
+  echo "DRY_RUN=1, not downloading."
+  exit 0
+fi
+
+echo "Downloading ${SOURCE_URI} -> ${TARGET_DIR}"
+mkdir -p "${TARGET_DIR}"
+storage_rsync "${SOURCE_URI}" "${TARGET_DIR}"
+
+echo "Download/check complete. Sample files:"
+find "${TARGET_DIR}" -maxdepth 4 -type f | head -50
