@@ -548,13 +548,13 @@ def compute_correlation_from_sequences(
             spearman_avg = 0.0
             spearman_std = 0.0
 
-        # wandb.log({
-        #     f"{set_type}_pearson_correlation_thrd/{env_name}_avg": pearson_avg,
-        #     f"{set_type}_pearson_correlation_thrd/{env_name}_std": pearson_std,
-        #     f"{set_type}_spearman_correlation_thrd/{env_name}_avg": spearman_avg,
-        #     f"{set_type}_spearman_correlation_thrd/{env_name}_std": spearman_std,
-        #     "epoch": epoch
-        # })
+        wandb.log({
+            f"{set_type}_pearson_correlation_thrd/{env_name}_avg": pearson_avg,
+            f"{set_type}_pearson_correlation_thrd/{env_name}_std": pearson_std,
+            f"{set_type}_spearman_correlation_thrd/{env_name}_avg": spearman_avg,
+            f"{set_type}_spearman_correlation_thrd/{env_name}_std": spearman_std,
+            "epoch": epoch
+        })
 
         pearson_env_avg_correlations.append(pearson_avg)
         spearmans_env_avg_correlations.append(spearman_avg)
@@ -756,5 +756,4 @@ def compute_avg_spearman(five_seqs):
     if len(cor_vals) == 0:
         return 0.0
     return float(np.mean(cor_vals))
-
 

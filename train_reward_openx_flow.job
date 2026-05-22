@@ -1,0 +1,60 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=train_reward_flow
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-task=1
+#SBATCH --constraint="a100|l40s|v100|a40"
+#SBATCH --mem=96G
+#SBATCH --time=48:00:00
+
+set -euo pipefail
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate /scratch1/chunheil/envs/openx_flow
+
+if [ -f "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}" ]; then
+  source "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}"
+fi
+
+: "${WANDB_ENTITY:?WANDB_ENTITY is not set. Export it before sbatch or store it in \$HOME/.config/wandb/env.}"
+
+export PYTHONPATH=/home1/chunheil/ReWiND
+export WANDB_SILENT=true
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+cd /home1/chunheil/ReWiND
+mkdir -p logs checkpoints_flow/openx_flow_15ep
+
+OPENX_EMBEDDING_PATH=${OPENX_EMBEDDING_PATH:-datasets/full_openx_flow_embeddings_train.h5}
+BATCH_SIZE=${BATCH_SIZE:-1024}
+WORKER=${WORKER:-1}
+SEED=${SEED:-42}
+RUN_SUFFIX=${RUN_SUFFIX:-openx_flow_15ep}
+
+python train_reward.py \
+  --wandb_entity "${WANDB_ENTITY}" \
+  --wandb_project "${WANDB_PROJECT:-rewind-reward-training}" \
+  --h5_folder_path datasets \
+  --openx_embedding_path "${OPENX_EMBEDDING_PATH}" \
+  --rewind \
+  --progress_target_type optical_flow \
+  --flow_missing_fallback error \
+  --subsample_video \
+  --clip_grad \
+  --cosine_scheduler \
+  --batch_size "${BATCH_SIZE}" \
+  --worker "${WORKER}" \
+  --epochs 15 \
+  --eval_interval 5 \
+  --seed "${SEED}" \
+  --log_confusion_matrix \
+  --run_suffix "${RUN_SUFFIX}" \
+  --checkpoint_dir checkpoints_flow/openx_flow_15ep

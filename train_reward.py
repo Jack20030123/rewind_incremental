@@ -36,7 +36,16 @@ def main(args):
     WANDB_ENTITY_NAME = args.wandb_entity
     WANDB_PROJECT_NAME = args.wandb_project
 
-    experiment_name = "ReWiND_Release_" + str(args.extra_data_type) + "_" + args.progress_target_type
+    experiment_parts = [
+        "ReWiND_Release",
+        str(args.extra_data_type),
+        args.progress_target_type,
+    ]
+    if args.use_freeze:
+        experiment_parts.append(f"freeze{args.freeze_ratio}")
+    if args.run_suffix:
+        experiment_parts.append(args.run_suffix)
+    experiment_name = "_".join(experiment_parts)
 
     group_name = "ReWind_Release_" + args.extra_data_type + "_" + args.progress_target_type
     run = wandb.init(
@@ -98,22 +107,26 @@ def main(args):
             )
 
         rewind_model.eval()
-        # with torch.no_grad():
-            # if args.extra_data_type == "metaworld":
-
-                # plot_confusion_matrix(h5_file = h5_train_eval_file, set = "train", rewind_model = rewind_model, args = args, epoch = epoch, run_name = experiment_name)
-                # plot_confusion_matrix(h5_file = h5_eval_file, set = "eval", rewind_model = rewind_model, args = args, epoch = epoch, run_name = experiment_name)
-        
-        if epoch <= 15:
-            if (epoch + 1) % args.eval_interval == 0: # too save time, we evaluate every 5 epochs
-                compute_metrics_multi(args, 
-                                    rewind_model, 
-                                    gt_data = h5_eval_file,
-                                    close_success_data=h5_close_success_file,
-                                    all_fail_data=h5_all_fail_file,
-                                    task_list=task_list,
-                                    epoch=epoch)
-        else:
+        should_eval = (epoch + 1) % args.eval_interval == 0 or (epoch + 1) == args.epochs
+        if should_eval:
+            with torch.no_grad():
+                if args.log_confusion_matrix and args.extra_data_type == "metaworld":
+                    plot_confusion_matrix(
+                        h5_file=h5_train_eval_file,
+                        set="train",
+                        rewind_model=rewind_model,
+                        args=args,
+                        epoch=epoch,
+                        run_name=experiment_name,
+                    )
+                    plot_confusion_matrix(
+                        h5_file=h5_eval_file,
+                        set="eval",
+                        rewind_model=rewind_model,
+                        args=args,
+                        epoch=epoch,
+                        run_name=experiment_name,
+                    )
             compute_metrics_multi(args, 
                                 rewind_model, 
                                 gt_data = h5_eval_file,
@@ -123,14 +136,22 @@ def main(args):
                                 epoch=epoch)
         
         # save checkpoint
-        if args.progress_target_type == "dino_goal_distance":
+        if args.checkpoint_dir:
+            checkpoint_dir = args.checkpoint_dir
+            append_run_suffix = False
+        elif args.progress_target_type == "dino_goal_distance":
             checkpoint_dir = "checkpoints_dino_freeze" if args.use_freeze else "checkpoints_dino"
+            append_run_suffix = True
         elif args.progress_target_type == "optical_flow":
             checkpoint_dir = "checkpoints_flow_freeze" if args.use_freeze else "checkpoints_flow"
+            append_run_suffix = True
         else:
             checkpoint_dir = "checkpoints_freeze" if args.use_freeze else "checkpoints"
+            append_run_suffix = True
+        if args.run_suffix and append_run_suffix:
+            checkpoint_dir = os.path.join(checkpoint_dir, args.run_suffix)
         if os.path.exists(checkpoint_dir) is False:
-            os.mkdir(checkpoint_dir)
+            os.makedirs(checkpoint_dir, exist_ok=True)
         save_dict = {
             "args": args,
             "model_state_dict": rewind_model.state_dict(),
@@ -176,5 +197,8 @@ if __name__ == "__main__":
     argparser.add_argument('--tau_away', type=float, default=0.01)
     argparser.add_argument('--margin', type=float, default=0.0)
     argparser.add_argument('--flow_missing_fallback', type=str, choices=["linear", "error"], default="linear")
+    argparser.add_argument('--checkpoint_dir', type=str, default="", help="Explicit checkpoint directory. Overrides variant defaults.")
+    argparser.add_argument('--run_suffix', type=str, default="", help="Suffix for wandb run name and checkpoint subdirectory.")
+    argparser.add_argument('--log_confusion_matrix', action='store_true', help="Log train/eval confusion matrices during evaluation.")
     args = argparser.parse_args()
     main(args)
