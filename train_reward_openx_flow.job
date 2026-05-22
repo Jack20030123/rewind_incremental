@@ -15,7 +15,7 @@
 set -euo pipefail
 
 source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
-conda activate /scratch1/chunheil/envs/openx_flow
+conda activate rewind
 
 if [ -f "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}" ]; then
   source "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}"
