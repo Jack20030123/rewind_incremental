@@ -1,0 +1,114 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=merge_openx_flow
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=64G
+#SBATCH --time=12:00:00
+
+set -euo pipefail
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate /scratch1/chunheil/envs/openx_flow
+
+cd /home1/chunheil/ReWiND
+mkdir -p datasets logs
+
+OUTPUT_PATH=${OUTPUT_PATH:-datasets/full_openx_flow_embeddings_train.h5}
+MANIFEST_PATH=${MANIFEST_PATH:-datasets/full_openx_flow_embeddings_train_manifest.txt}
+CHECKSUM_PATH=${CHECKSUM_PATH:-datasets/full_openx_flow_embeddings_train.sha256}
+
+echo "Selecting OpenX/real-world embedding H5 inputs with flow targets..."
+
+mapfile -t INPUTS < <(
+python - <<'PY'
+import h5py
+from pathlib import Path
+
+exclude_exact = {
+    "full_openx_embeddings_v2_train.h5",
+    "full_openx_flow_embeddings_train.h5",
+    "bridge_embeddings_train_test.h5",
+}
+exclude_prefixes = (
+    "metaworld_",
+)
+exclude_substrings = (
+    "_test_",
+    "_labeled",
+    "centercrop",
+    "generation",
+)
+
+def has_flow(path):
+    try:
+        with h5py.File(path, "r") as f:
+            for g in f.values():
+                if not isinstance(g, h5py.Group):
+                    continue
+                trajs = [
+                    k for k in g.keys()
+                    if "lang" not in k and not k.startswith("flow_")
+                ]
+                if any(
+                    f"flow_progress_{t}" in g and f"flow_signal_{t}" in g
+                    for t in trajs
+                ):
+                    return True
+    except Exception as exc:
+        print(f"SKIP {path}: {type(exc).__name__}: {exc}", flush=True)
+    return False
+
+for path in sorted(Path("datasets").glob("*embeddings_train.h5")):
+    name = path.name
+    if name in exclude_exact:
+        continue
+    if any(name.startswith(prefix) for prefix in exclude_prefixes):
+        continue
+    if any(part in name for part in exclude_substrings):
+        continue
+    if has_flow(path):
+        print(path)
+PY
+)
+
+if [ "${#INPUTS[@]}" -eq 0 ]; then
+  echo "No flow-enabled training H5 inputs found."
+  exit 1
+fi
+
+printf "%s\n" "${INPUTS[@]}" > "${MANIFEST_PATH}"
+
+echo "Merging ${#INPUTS[@]} files into ${OUTPUT_PATH}"
+cat "${MANIFEST_PATH}"
+
+python data_preprocessing/merge_embedding_h5.py \
+  --output "${OUTPUT_PATH}" \
+  --require-flow \
+  --skip-errors \
+  --inputs "${INPUTS[@]}"
+
+echo "Verifying merged flow coverage..."
+python - <<PY
+import h5py
+p = "${OUTPUT_PATH}"
+with h5py.File(p, "r") as f:
+    groups = total = flow = 0
+    for g in f.values():
+        if not isinstance(g, h5py.Group):
+            continue
+        groups += 1
+        trajs = [k for k in g.keys() if "lang" not in k and not k.startswith("flow_")]
+        total += len(trajs)
+        flow += sum(f"flow_progress_{t}" in g and f"flow_signal_{t}" in g for t in trajs)
+print(f"{p}: groups={groups} flow={flow}/{total}")
+if total == 0 or flow != total:
+    raise SystemExit("Merged output is missing flow for at least one copied trajectory.")
+PY
+
+sha256sum "${OUTPUT_PATH}" > "${CHECKSUM_PATH}"
+ls -lh "${OUTPUT_PATH}" "${MANIFEST_PATH}" "${CHECKSUM_PATH}"
