@@ -1,4 +1,5 @@
 import argparse
+import pickle
 import re
 import tarfile
 from collections import defaultdict
@@ -21,6 +22,9 @@ from data_preprocessing.generate_openx_bridge_embeddings import (
 from utils.progress_utils import compute_frame_diff_progress
 
 
+IMAGE_KEY_HINTS = ("image", "rgb", "frame")
+
+
 def _task_instruction(dataset_name, video_path):
     match = re.search(r"task_(\d+)", video_path.name)
     if match:
@@ -32,6 +36,68 @@ def _task_instruction(dataset_name, video_path):
             text = text.replace("_", " ")
             return f"{dataset_name} {text}"
     return f"{dataset_name} video"
+
+
+def _value_to_image(value):
+    if value is None:
+        return None
+    if isinstance(value, np.ndarray):
+        if value.ndim == 3:
+            return np.asarray(value[:, :, :3], dtype=np.uint8)
+        if value.ndim == 4 and value.shape[0] > 0:
+            return _value_to_image(value[0])
+        if value.dtype == object and value.size == 1:
+            return _value_to_image(value.item())
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            from PIL import Image
+            import io
+
+            return np.asarray(Image.open(io.BytesIO(value)).convert("RGB"), dtype=np.uint8)
+        except Exception:
+            return None
+    return None
+
+
+def _find_image_sequence(obj):
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if any(hint in str(key).lower() for hint in IMAGE_KEY_HINTS):
+                image = _value_to_image(value)
+                if image is not None:
+                    return [image]
+                if isinstance(value, np.ndarray) and value.ndim == 4:
+                    return [
+                        np.asarray(frame[:, :, :3], dtype=np.uint8)
+                        for frame in value
+                    ]
+        for value in obj.values():
+            found = _find_image_sequence(value)
+            if found:
+                return found
+    elif isinstance(obj, (list, tuple)):
+        images = []
+        for value in obj:
+            image = _value_to_image(value)
+            if image is not None:
+                images.append(image)
+        if images:
+            return images
+        for value in obj:
+            found = _find_image_sequence(value)
+            if found:
+                return found
+    else:
+        image = _value_to_image(obj)
+        if image is not None:
+            return [image]
+    return []
+
+
+def _load_pickle_frames(path):
+    with open(path, "rb") as handle:
+        data = pickle.load(handle)
+    return _find_image_sequence(data)
 
 
 def _read_sampled_video_frames(video_path, max_length):
@@ -63,6 +129,10 @@ def _iter_videos(dataset_dir, camera_key):
     return videos
 
 
+def _iter_pickle_files(dataset_dir):
+    return sorted(Path(dataset_dir).glob("**/*.pickle")) + sorted(Path(dataset_dir).glob("**/*.pkl"))
+
+
 def _extract_archives(dataset_dir, extract_dir):
     extract_dir = Path(extract_dir)
     extract_dir.mkdir(parents=True, exist_ok=True)
@@ -91,12 +161,14 @@ def build_video_tree_h5(
     if extract_dir:
         source_dir = _extract_archives(source_dir, extract_dir)
 
-    videos = _iter_videos(source_dir, camera_key)
-    if not videos:
+    media_paths = _iter_videos(source_dir, camera_key)
+    pickle_paths = [] if media_paths else _iter_pickle_files(source_dir)
+    media_paths = media_paths or pickle_paths
+    if not media_paths:
         hint = f" under camera directory {camera_key}" if camera_key else ""
-        raise FileNotFoundError(f"No .mp4 files found in {source_dir}{hint}")
+        raise FileNotFoundError(f"No .mp4 or .pickle files found in {source_dir}{hint}")
     if max_episodes > 0:
-        videos = videos[:max_episodes]
+        media_paths = media_paths[:max_episodes]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dino_model = torch.hub.load(
@@ -112,13 +184,16 @@ def build_video_tree_h5(
     per_group_counts = defaultdict(int)
 
     with h5py.File(output_path, "w") as h5_file:
-        for video_path in tqdm(videos, desc=f"Processing {dataset_name} videos"):
-            frames = _read_sampled_video_frames(video_path, max_length=max_length)
+        for media_path in tqdm(media_paths, desc=f"Processing {dataset_name} media"):
+            if media_path.suffix == ".mp4":
+                frames = _read_sampled_video_frames(media_path, max_length=max_length)
+            else:
+                frames = sample_frames(_load_pickle_frames(media_path), max_length)
             if not frames:
                 continue
 
             sampled_frames = [center_crop(frame, 224) for frame in frames]
-            instruction = _task_instruction(dataset_name, video_path)
+            instruction = _task_instruction(dataset_name, media_path)
             group_name = sanitize_h5_key(instruction)
             if group_name not in h5_file:
                 h5_file.create_group(group_name)
