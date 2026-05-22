@@ -6,6 +6,9 @@ import torch
 import random
 import argparse
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -18,6 +21,41 @@ from utils.update_utils import train_step_fn, CosineWithMinLRScheduler
 from utils.eval_confusion_matrix import plot_confusion_matrix
 
 os.environ["TOKENIZERS_PARALLELISM"] = "False"
+
+
+def log_prediction_target_plot(args, rewind_model, dataloader, device, epoch, split_name):
+    try:
+        batch = next(iter(dataloader))
+    except StopIteration:
+        return
+
+    video_array = batch["video_array"].to(device).float()
+    text_array = batch["text_array"].squeeze(1).to(device).float()
+    target = batch["progress"].to(device).float()
+    max_examples = min(getattr(args, "plot_max_examples", 4), video_array.shape[0])
+
+    with torch.no_grad():
+        pred = rewind_model(video_array[:max_examples], text_array[:max_examples]).squeeze(-1)
+
+    pred_np = pred.detach().cpu().numpy()
+    target_np = target[:max_examples].detach().cpu().numpy()
+
+    fig, axes = plt.subplots(max_examples, 1, figsize=(7, 2.2 * max_examples), squeeze=False)
+    for idx in range(max_examples):
+        ax = axes[idx][0]
+        x = np.arange(target_np.shape[1])
+        ax.plot(x, target_np[idx], label="target", linewidth=2)
+        ax.plot(x, pred_np[idx], label="prediction", linewidth=2)
+        ax.set_ylim(-0.05, 1.05)
+        ax.set_title(f"{split_name} sample {idx}")
+        ax.grid(True, alpha=0.3)
+        if idx == 0:
+            ax.legend(loc="best")
+    fig.tight_layout()
+    wandb.log(
+        {f"progress_prediction/{split_name}_pred_vs_target": wandb.Image(fig), "epoch": epoch}
+    )
+    plt.close(fig)
 
 
 
@@ -110,6 +148,15 @@ def main(args):
         should_eval = (epoch + 1) % args.eval_interval == 0 or (epoch + 1) == args.epochs
         if should_eval:
             with torch.no_grad():
+                if args.log_pred_target_plot:
+                    log_prediction_target_plot(
+                        args=args,
+                        rewind_model=rewind_model,
+                        dataloader=openx_dataloader,
+                        device=device,
+                        epoch=epoch,
+                        split_name="openx",
+                    )
                 if args.log_confusion_matrix and args.extra_data_type == "metaworld":
                     plot_confusion_matrix(
                         h5_file=h5_train_eval_file,
@@ -200,5 +247,7 @@ if __name__ == "__main__":
     argparser.add_argument('--checkpoint_dir', type=str, default="", help="Explicit checkpoint directory. Overrides variant defaults.")
     argparser.add_argument('--run_suffix', type=str, default="", help="Suffix for wandb run name and checkpoint subdirectory.")
     argparser.add_argument('--log_confusion_matrix', action='store_true', help="Log train/eval confusion matrices during evaluation.")
+    argparser.add_argument('--log_pred_target_plot', action='store_true', help="Log predicted progress vs target progress plots during evaluation.")
+    argparser.add_argument('--plot_max_examples', type=int, default=4)
     args = argparser.parse_args()
     main(args)
