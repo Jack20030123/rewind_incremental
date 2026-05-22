@@ -61,6 +61,10 @@ def _value_to_image(value):
 
 def _find_image_sequence(obj):
     if isinstance(obj, dict):
+        if "image_list" in obj:
+            found = _find_image_sequence(obj["image_list"])
+            if found:
+                return found
         for key, value in obj.items():
             if any(hint in str(key).lower() for hint in IMAGE_KEY_HINTS):
                 image = _value_to_image(value)
