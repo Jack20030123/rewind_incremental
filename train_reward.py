@@ -145,7 +145,7 @@ def main(args):
             )
 
         rewind_model.eval()
-        should_eval = (epoch + 1) % args.eval_interval == 0 or (epoch + 1) == args.epochs
+        should_eval = epoch == 0 or (epoch + 1) % args.eval_interval == 0 or (epoch + 1) == args.epochs
         if should_eval:
             with torch.no_grad():
                 if args.log_pred_target_plot:
