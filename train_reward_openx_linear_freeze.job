@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --account=biyik_1165
-#SBATCH --job-name=train_reward_dino_frz
+#SBATCH --job-name=train_reward_linear_frz
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 #SBATCH --partition=gpu
@@ -33,14 +33,14 @@ export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 
 cd /home1/chunheil/ReWiND
-mkdir -p logs checkpoints_dino_freeze/openx_dino_freeze_15ep
+mkdir -p logs checkpoints_freeze/openx_linear_freeze_15ep
 
 OPENX_EMBEDDING_PATH=${OPENX_EMBEDDING_PATH:-datasets/full_openx_embeddings_v2_train.h5}
 BATCH_SIZE=${BATCH_SIZE:-1024}
 WORKER=${WORKER:-1}
 SEED=${SEED:-42}
 FREEZE_RATIO=${FREEZE_RATIO:-0.4}
-RUN_SUFFIX=${RUN_SUFFIX:-openx_dino_freeze_15ep}
+RUN_SUFFIX=${RUN_SUFFIX:-openx_linear_freeze_15ep}
 
 python train_reward.py \
   --wandb_entity "${WANDB_ENTITY}" \
@@ -50,7 +50,7 @@ python train_reward.py \
   --rewind \
   --use_freeze \
   --freeze_ratio "${FREEZE_RATIO}" \
-  --progress_target_type dino_goal_distance \
+  --progress_target_type linear \
   --subsample_video \
   --clip_grad \
   --cosine_scheduler \
@@ -62,4 +62,4 @@ python train_reward.py \
   --log_confusion_matrix \
   --log_pred_target_plot \
   --run_suffix "${RUN_SUFFIX}" \
-  --checkpoint_dir checkpoints_dino_freeze/openx_dino_freeze_15ep
+  --checkpoint_dir checkpoints_freeze/openx_linear_freeze_15ep

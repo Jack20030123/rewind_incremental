@@ -161,7 +161,10 @@ def main(args):
                         epoch=epoch,
                         split_name="openx",
                     )
-                if args.log_confusion_matrix and args.extra_data_type == "metaworld":
+                should_log_confusion = args.log_confusion_matrix and (
+                    not args.confusion_matrix_final_only or (epoch + 1) == args.epochs
+                )
+                if should_log_confusion and args.extra_data_type == "metaworld":
                     plot_confusion_matrix(
                         h5_file=h5_train_eval_file,
                         set="train",
@@ -190,9 +193,6 @@ def main(args):
         if args.checkpoint_dir:
             checkpoint_dir = args.checkpoint_dir
             append_run_suffix = False
-        elif args.progress_target_type == "dino_goal_distance":
-            checkpoint_dir = "checkpoints_dino_freeze" if args.use_freeze else "checkpoints_dino"
-            append_run_suffix = True
         elif args.progress_target_type == "optical_flow":
             checkpoint_dir = "checkpoints_flow_freeze" if args.use_freeze else "checkpoints_flow"
             append_run_suffix = True
@@ -241,7 +241,7 @@ if __name__ == "__main__":
     argparser.add_argument('--use_freeze', action='store_true')
     argparser.add_argument('--freeze_ratio', type=float, default=0.4)
     argparser.add_argument('--eval_max_samples', type=int, default=-1)
-    argparser.add_argument('--progress_target_type', type=str, choices=["linear", "dino_goal_distance", "optical_flow"], default="dino_goal_distance")
+    argparser.add_argument('--progress_target_type', type=str, choices=["linear", "optical_flow"], default="linear")
     argparser.add_argument('--goal_k', type=int, default=3)
     argparser.add_argument('--lambda_prog', type=float, default=1.0)
     argparser.add_argument('--lambda_dir', type=float, default=0.25)
@@ -251,6 +251,7 @@ if __name__ == "__main__":
     argparser.add_argument('--checkpoint_dir', type=str, default="", help="Explicit checkpoint directory. Overrides variant defaults.")
     argparser.add_argument('--run_suffix', type=str, default="", help="Suffix for wandb run name and checkpoint subdirectory.")
     argparser.add_argument('--log_confusion_matrix', action='store_true', help="Log train/eval confusion matrices during evaluation.")
+    argparser.add_argument('--confusion_matrix_final_only', action='store_true', help="Only log confusion matrices on the final epoch.")
     argparser.add_argument('--log_pred_target_plot', action='store_true', help="Log predicted progress vs target progress plots during evaluation.")
     argparser.add_argument('--plot_max_examples', type=int, default=4)
     args = argparser.parse_args()

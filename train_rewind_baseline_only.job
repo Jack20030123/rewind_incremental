@@ -38,7 +38,7 @@ export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 
 cd /home1/chunheil/ReWiND
-mkdir -p logs checkpoints_dino/openx_baseline_train_only_15ep
+mkdir -p logs checkpoints/openx_linear_train_only_15ep
 
 H5_FOLDER_PATH=${H5_FOLDER_PATH:-datasets_rewind_scratch}
 OPENX_EMBEDDING_PATH=${OPENX_EMBEDDING_PATH:-datasets/full_openx_embeddings_v2_train.h5}
@@ -58,7 +58,7 @@ python train_reward.py \
   --h5_folder_path "${H5_FOLDER_PATH}" \
   --openx_embedding_path "${OPENX_EMBEDDING_PATH}" \
   --rewind \
-  --progress_target_type dino_goal_distance \
+  --progress_target_type linear \
   --subsample_video \
   --clip_grad \
   --cosine_scheduler \
@@ -67,6 +67,8 @@ python train_reward.py \
   --epochs 15 \
   --eval_interval 5 \
   --seed "${SEED}" \
+  --log_confusion_matrix \
+  --confusion_matrix_final_only \
   --log_pred_target_plot \
-  --run_suffix openx_baseline_train_only_15ep \
-  --checkpoint_dir checkpoints_dino/openx_baseline_train_only_15ep
+  --run_suffix openx_linear_train_only_15ep \
+  --checkpoint_dir checkpoints/openx_linear_train_only_15ep
