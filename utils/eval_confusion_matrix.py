@@ -94,7 +94,13 @@ def plot_confusion_matrix(h5_file, set, rewind_model, args, epoch = None, run_na
             video_embedding = np.asarray(h5_file[env][key])
             if args.subsample_video:
                 video_embedding = padding_video(video_embedding, args.max_length)
+            else:
+                video_embedding = padding_video(video_embedding, args.max_length)
+            if isinstance(video_embedding, torch.Tensor):
+                video_embedding = video_embedding.detach().cpu().numpy()
             traj_list.append(video_embedding)
+        if not traj_list:
+            continue
         traj_data_all = np.stack(traj_list, axis=0)
         traj_data_all = torch.from_numpy(traj_data_all).to(device).float()
 
@@ -111,7 +117,6 @@ def plot_confusion_matrix(h5_file, set, rewind_model, args, epoch = None, run_na
         pred_org_progress_list.append(progress_org_list)
 
     plot_matrix_as_image_for_paper(args, pred_org_progress_list, eval_envs, set, text_list, epoch = epoch, run_name = run_name)
-
 
 
 

@@ -21,7 +21,9 @@ if [ -f "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}" ]; then
   source "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}"
 fi
 
-: "${WANDB_ENTITY:?WANDB_ENTITY is not set. Export it before sbatch or store it in \$HOME/.config/wandb/env.}"
+export WANDB_ENTITY="${WANDB_ENTITY:-lincolnlam-university-of-southern-california}"
+export WANDB_PROJECT="${WANDB_PROJECT:-rewind-reward-training}"
+export WANDB_MODE="${WANDB_MODE:-online}"
 
 export PYTHONPATH=/home1/chunheil/ReWiND
 export WANDB_SILENT=true
@@ -41,7 +43,7 @@ RUN_SUFFIX=${RUN_SUFFIX:-openx_flow_15ep}
 
 python train_reward.py \
   --wandb_entity "${WANDB_ENTITY}" \
-  --wandb_project "${WANDB_PROJECT:-rewind-reward-training}" \
+  --wandb_project "${WANDB_PROJECT}" \
   --h5_folder_path datasets \
   --openx_embedding_path "${OPENX_EMBEDDING_PATH}" \
   --rewind \
