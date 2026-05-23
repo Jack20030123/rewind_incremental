@@ -1,0 +1,77 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=rewind_scratch
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-task=1
+#SBATCH --constraint="a100|l40s|v100|a40"
+#SBATCH --mem=96G
+#SBATCH --time=72:00:00
+
+set -eo pipefail
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate rewind
+
+if [ -f "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}" ]; then
+  source "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}"
+fi
+
+export WANDB_ENTITY="${WANDB_ENTITY:-lincolnlam-university-of-southern-california}"
+export WANDB_PROJECT="${WANDB_PROJECT:-rewind-reward-training}"
+export WANDB_MODE="${WANDB_MODE:-online}"
+export PYTHONPATH=/home1/chunheil/ReWiND
+export WANDB_SILENT=true
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+cd /home1/chunheil/ReWiND
+mkdir -p logs checkpoints_dino/openx_baseline_scratch_15ep
+
+SCRATCH_DATASET_DIR=${SCRATCH_DATASET_DIR:-datasets_rewind_scratch}
+OPENX_EMBEDDING_PATH=${OPENX_EMBEDDING_PATH:-datasets/full_openx_embeddings_v2_train.h5}
+BATCH_SIZE=${BATCH_SIZE:-1024}
+WORKER=${WORKER:-1}
+SEED=${SEED:-42}
+
+mkdir -p "${SCRATCH_DATASET_DIR}"
+
+python data_generation/metaworld_generation.py \
+  --save_path "${SCRATCH_DATASET_DIR}"
+
+python data_preprocessing/metaworld_center_crop.py \
+  --video_path "${SCRATCH_DATASET_DIR}" \
+  --target_path "${SCRATCH_DATASET_DIR}"
+
+python data_preprocessing/generate_dino_embeddings.py \
+  --video_path_folder "${SCRATCH_DATASET_DIR}" \
+  --target_path "${SCRATCH_DATASET_DIR}"
+
+python scripts/check_reward_training_inputs.py \
+  --h5-folder-path "${SCRATCH_DATASET_DIR}" \
+  --openx-embedding-path "${OPENX_EMBEDDING_PATH}"
+
+python train_reward.py \
+  --wandb_entity "${WANDB_ENTITY}" \
+  --wandb_project "${WANDB_PROJECT}" \
+  --h5_folder_path "${SCRATCH_DATASET_DIR}" \
+  --openx_embedding_path "${OPENX_EMBEDDING_PATH}" \
+  --rewind \
+  --progress_target_type dino_goal_distance \
+  --subsample_video \
+  --clip_grad \
+  --cosine_scheduler \
+  --batch_size "${BATCH_SIZE}" \
+  --worker "${WORKER}" \
+  --epochs 15 \
+  --eval_interval 5 \
+  --seed "${SEED}" \
+  --log_pred_target_plot \
+  --run_suffix openx_baseline_scratch_15ep \
+  --checkpoint_dir checkpoints_dino/openx_baseline_scratch_15ep

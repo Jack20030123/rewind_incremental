@@ -106,8 +106,13 @@ def plot_confusion_matrix(h5_file, set, rewind_model, args, epoch = None, run_na
 
     for i in tqdm(range(min(len(eval_envs), max_n))):
         env = eval_envs[i]
-        choose_keys = list(h5_file[env].keys())
-        choose_keys = [key for key in choose_keys if "lang" not in key]
+        choose_keys = [
+            key
+            for key in h5_file[env].keys()
+            if "lang" not in key
+            and not key.startswith("flow_progress_")
+            and not key.startswith("flow_signal_")
+        ]
 
         traj_list = []
         for key in choose_keys:
@@ -138,4 +143,3 @@ def plot_confusion_matrix(h5_file, set, rewind_model, args, epoch = None, run_na
         plotted_envs.append(env)
 
     plot_matrix_as_image_for_paper(args, pred_org_progress_list, plotted_envs, set, text_list, epoch = epoch, run_name = run_name)
-
