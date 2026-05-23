@@ -109,7 +109,8 @@ class PolicyObservationEncoder:
         """
         Encode image sequence (for policy)
         :param images: Image sequence (num_vids, num_frames, *)
-        :return: Encoded image features
+        :return: Encoded image featuresexport LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/home1/chunheil/.mujoco/mujoco210/bin"
+
         """
         assert len(images.shape) == 5, "The input should be a sequence of video frames."
         # Ensure channels are in first dimension

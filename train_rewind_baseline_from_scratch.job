@@ -24,8 +24,14 @@ fi
 export WANDB_ENTITY="${WANDB_ENTITY:-lincolnlam-university-of-southern-california}"
 export WANDB_PROJECT="${WANDB_PROJECT:-rewind-reward-training}"
 export WANDB_MODE="${WANDB_MODE:-online}"
+: "${WANDB_API_KEY:?WANDB_API_KEY is not set. Export it before sbatch or store it in \$HOME/.config/wandb/env.}"
+export WANDB_API_KEY
 export PYTHONPATH=/home1/chunheil/ReWiND
 export WANDB_SILENT=true
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/home1/chunheil/.mujoco/mujoco210/bin"
+if [ -d /usr/lib/nvidia ]; then
+  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib/nvidia"
+fi
 export OPENBLAS_NUM_THREADS=1
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
