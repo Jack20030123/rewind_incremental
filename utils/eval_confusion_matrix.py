@@ -46,6 +46,9 @@ def plot_matrix_as_image_for_paper(args, matrix, names, set, text, epoch = None,
     # only keep 2 decimal points
 
     matrix = np.array(matrix)
+    if matrix.size == 0:
+        print(f"Skipping {set} confusion matrix at epoch {epoch}: no valid rows.")
+        return
     m_min = matrix.min()
     m_max = matrix.max()
 
@@ -96,6 +99,7 @@ def plot_confusion_matrix(h5_file, set, rewind_model, args, epoch = None, run_na
     text_embeddings = torch.from_numpy(text_embeddings).to(device).float()
 
     pred_org_progress_list = []
+    plotted_envs = []
 
     # 2/10 Confusion Matrix limit eval
     max_n = args.eval_max_samples if hasattr(args, "eval_max_samples") and args.eval_max_samples > 0 else len(eval_envs)
@@ -131,7 +135,7 @@ def plot_confusion_matrix(h5_file, set, rewind_model, args, epoch = None, run_na
         progress_org_list = np.stack(progress_org_list, axis=0)
         progress_org_list = np.mean(progress_org_list, axis=0)
         pred_org_progress_list.append(progress_org_list)
+        plotted_envs.append(env)
 
-    plot_matrix_as_image_for_paper(args, pred_org_progress_list, eval_envs, set, text_list, epoch = epoch, run_name = run_name)
-
+    plot_matrix_as_image_for_paper(args, pred_org_progress_list, plotted_envs, set, text_list, epoch = epoch, run_name = run_name)
 
