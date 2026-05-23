@@ -29,6 +29,20 @@ class ReWiNDVideoDataset(Dataset):
             and not traj.startswith("flow_progress_")
             and not traj.startswith("flow_signal_")
         ]
+        if self.args.progress_target_type == "optical_flow":
+            flow_traj_lists = [
+                traj
+                for traj in traj_lists
+                if f"flow_progress_{traj}" in data_group
+                and f"flow_signal_{traj}" in data_group
+            ]
+            if flow_traj_lists:
+                return random.choice(flow_traj_lists)
+            if getattr(self.args, "flow_missing_fallback", "linear") == "error":
+                raise KeyError(
+                    "No trajectories with matching flow_progress_* and flow_signal_* "
+                    f"in dataset group {data_group.name}"
+                )
         return random.choice(traj_lists)
 
     def _load_flow_progress(self, data_group, traj_name):
