@@ -2,10 +2,7 @@ import h5py
 import random
 import torch as th
 import numpy as np
-import torch.nn.functional as F
 from torch.utils.data import Dataset
-
-from utils.progress_utils import compute_dino_goal_progress
 
 
 
@@ -66,12 +63,6 @@ class ReWiNDVideoDataset(Dataset):
         if self.args.progress_target_type == "linear":
             progress = np.asarray(linear_progress, dtype=np.float32)
             goal_distance = np.zeros_like(progress, dtype=np.float32)
-        elif self.args.progress_target_type == "dino_goal_distance":
-            progress, goal_distance, _ = compute_dino_goal_progress(
-                sequence_embeddings=video_frames,
-                goal_source_embeddings=goal_source_frames,
-                goal_k=self.args.goal_k,
-            )
         elif self.args.progress_target_type == "optical_flow":
             if precomputed_progress is None:
                 progress = np.asarray(linear_progress, dtype=np.float32)

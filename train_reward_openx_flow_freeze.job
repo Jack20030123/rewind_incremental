@@ -24,6 +24,7 @@ fi
 export WANDB_ENTITY="${WANDB_ENTITY:-lincolnlam-university-of-southern-california}"
 export WANDB_PROJECT="${WANDB_PROJECT:-rewind-reward-training}"
 export WANDB_MODE="${WANDB_MODE:-online}"
+: "${WANDB_API_KEY:?Set WANDB_API_KEY or provide WANDB_ENV_FILE before submitting.}"
 
 export PYTHONPATH=/home1/chunheil/ReWiND
 export WANDB_SILENT=true
@@ -35,7 +36,7 @@ export NUMEXPR_NUM_THREADS=1
 cd /home1/chunheil/ReWiND
 mkdir -p logs checkpoints_flow_freeze/openx_flow_freeze_15ep
 
-OPENX_EMBEDDING_PATH=${OPENX_EMBEDDING_PATH:-datasets/full_openx_flow_embeddings_train.h5}
+OPENX_EMBEDDING_PATH=${OPENX_EMBEDDING_PATH:-/scratch1/chunheil/ReWiND_home_moved/datasets/full_openx_flow_embeddings_train.h5}
 BATCH_SIZE=${BATCH_SIZE:-1024}
 WORKER=${WORKER:-1}
 SEED=${SEED:-42}
@@ -45,7 +46,7 @@ RUN_SUFFIX=${RUN_SUFFIX:-openx_flow_freeze_15ep}
 python train_reward.py \
   --wandb_entity "${WANDB_ENTITY}" \
   --wandb_project "${WANDB_PROJECT}" \
-  --h5_folder_path datasets \
+  --h5_folder_path datasets_rewind_scratch \
   --openx_embedding_path "${OPENX_EMBEDDING_PATH}" \
   --rewind \
   --use_freeze \
@@ -58,7 +59,7 @@ python train_reward.py \
   --batch_size "${BATCH_SIZE}" \
   --worker "${WORKER}" \
   --epochs 15 \
-  --eval_interval 5 \
+  --eval_interval 1 \
   --seed "${SEED}" \
   --log_confusion_matrix \
   --log_pred_target_plot \

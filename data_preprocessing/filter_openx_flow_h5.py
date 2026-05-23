@@ -1,10 +1,9 @@
-"""Drop OpenX trajectories whose flow_signal is identically zero.
+"""Drop OpenX trajectories that are missing frame-difference flow targets.
 
-These trajectories correspond to videos where the DINO encoder produced
-identical embeddings for every frame (camera static or change too subtle to
-register), so `flow_progress` is degenerate (all zeros). Under uniform-group
-sampling, ~68% of the affected groups dominate the resulting batches, which
-makes ~65% of OpenX samples in a batch end up with all-zero progress targets.
+By default this script only requires each trajectory to have matching
+`flow_progress_<traj_id>` and `flow_signal_<traj_id>` datasets. Pass
+`--drop-zero-flow` to also remove trajectories whose `flow_signal` is
+identically zero.
 
 This script writes a cleaned h5 with the same layout as the source:
 
@@ -27,7 +26,7 @@ def _is_traj_key(name):
     return (not name.startswith("flow_")) and ("lang" not in name)
 
 
-def filter_h5(src_path, dst_path):
+def filter_h5(src_path, dst_path, drop_zero_flow=False):
     src = h5py.File(src_path, "r")
     dst = h5py.File(dst_path, "w")
 
@@ -47,9 +46,10 @@ def filter_h5(src_path, dst_path):
             for tk in traj_keys:
                 n_traj_in += 1
                 fs_key = f"flow_signal_{tk}"
-                if fs_key not in src_group:
+                fp_key = f"flow_progress_{tk}"
+                if fp_key not in src_group or fs_key not in src_group:
                     continue
-                if float(np.asarray(src_group[fs_key]).max()) <= 0.0:
+                if drop_zero_flow and float(np.asarray(src_group[fs_key]).max()) <= 0.0:
                     continue
                 kept.append(tk)
 
@@ -63,10 +63,8 @@ def filter_h5(src_path, dst_path):
                 )
                 fp_key = f"flow_progress_{tk}"
                 fs_key = f"flow_signal_{tk}"
-                if fp_key in src_group:
-                    dst_group.create_dataset(fp_key, data=np.asarray(src_group[fp_key]))
-                if fs_key in src_group:
-                    dst_group.create_dataset(fs_key, data=np.asarray(src_group[fs_key]))
+                dst_group.create_dataset(fp_key, data=np.asarray(src_group[fp_key]))
+                dst_group.create_dataset(fs_key, data=np.asarray(src_group[fs_key]))
                 n_traj_kept += 1
 
             if "minilm_lang_embedding" in src_group:
@@ -112,6 +110,11 @@ def main():
         "--dst",
         default="datasets/rewind_openx_flow_embeddings/full_openx_flow_embeddings_train_clean.h5",
     )
+    parser.add_argument(
+        "--drop-zero-flow",
+        action="store_true",
+        help="Also remove trajectories whose flow_signal max is <= 0.",
+    )
     args = parser.parse_args()
 
     src = Path(args.src).resolve()
@@ -126,7 +129,7 @@ def main():
     print(f"src: {src}")
     print(f"dst: {dst}")
     print()
-    filter_h5(str(src), str(dst))
+    filter_h5(str(src), str(dst), drop_zero_flow=args.drop_zero_flow)
 
 
 if __name__ == "__main__":

@@ -83,6 +83,7 @@ def main():
         print_summary(label, info)
 
     train = summaries["MetaWorld train"]
+    eval_info = summaries["MetaWorld eval"]
     openx = summaries["OpenX DINO"]
     if train["exists"] and openx["exists"] and train["resolved"] == openx["resolved"]:
         print(
@@ -93,6 +94,10 @@ def main():
     flow_openx = summaries["OpenX flow"]
     if flow_openx["exists"] and flow_openx["flow"] != flow_openx["trajectories"]:
         print("ERROR: OpenX flow file has incomplete flow coverage.")
+    if train["exists"] and train["flow"] != train["trajectories"]:
+        print("ERROR: MetaWorld train file has incomplete flow coverage.")
+    if eval_info["exists"] and eval_info["flow"] != eval_info["trajectories"]:
+        print("WARNING: MetaWorld eval file has incomplete flow coverage.")
 
 
 if __name__ == "__main__":

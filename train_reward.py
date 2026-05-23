@@ -150,7 +150,8 @@ def main(args):
 
         rewind_model.eval()
         should_eval = epoch == 0 or (epoch + 1) % args.eval_interval == 0 or (epoch + 1) == args.epochs
-        if should_eval:
+        should_eval_metrics = args.progress_target_type == "optical_flow" or should_eval
+        if should_eval_metrics:
             with torch.no_grad():
                 if args.log_pred_target_plot:
                     log_prediction_target_plot(
@@ -162,7 +163,7 @@ def main(args):
                         split_name="openx",
                     )
                 should_log_confusion = args.log_confusion_matrix and (
-                    not args.confusion_matrix_final_only or (epoch + 1) == args.epochs
+                    epoch == 0 or (epoch + 1) == args.epochs
                 )
                 if should_log_confusion and args.extra_data_type == "metaworld":
                     plot_confusion_matrix(
@@ -251,7 +252,7 @@ if __name__ == "__main__":
     argparser.add_argument('--checkpoint_dir', type=str, default="", help="Explicit checkpoint directory. Overrides variant defaults.")
     argparser.add_argument('--run_suffix', type=str, default="", help="Suffix for wandb run name and checkpoint subdirectory.")
     argparser.add_argument('--log_confusion_matrix', action='store_true', help="Log train/eval confusion matrices during evaluation.")
-    argparser.add_argument('--confusion_matrix_final_only', action='store_true', help="Only log confusion matrices on the final epoch.")
+    argparser.add_argument('--confusion_matrix_final_only', action='store_true', help="Deprecated; confusion matrices are logged at epoch 0 and the final epoch.")
     argparser.add_argument('--log_pred_target_plot', action='store_true', help="Log predicted progress vs target progress plots during evaluation.")
     argparser.add_argument('--plot_max_examples', type=int, default=4)
     args = argparser.parse_args()

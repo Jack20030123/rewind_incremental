@@ -80,7 +80,7 @@ python train_reward.py --wandb_entity YOUR_WANDB_ENTITY(Required) \
 Two MetaWorld-focused reward-model variants are implemented on top of the existing ReWiND training path:
 
 - **Freeze augmentation** (`--use_freeze`): inserts repeated frames into rewound sequences so stalled visual states do not imply additional progress.
-- **Optical-flow progress targets** (`--progress_target_type optical_flow`): uses scalar frame-difference progress targets (`flow_progress_<traj_id>`) instead of DINO goal-distance targets.
+- **Optical-flow progress targets** (`--progress_target_type optical_flow`): uses scalar frame-difference progress targets (`flow_progress_<traj_id>`).
 
 OpenX optical-flow preprocessing is experimental/WIP. The supported optical-flow path below is for MetaWorld.
 
@@ -119,7 +119,7 @@ python train_reward.py --wandb_entity YOUR_WANDB_ENTITY \
 --worker 1
 ```
 
-Key additions: `--use_freeze` enables frozen-frame augmentation; `--freeze_ratio` controls the duplicate-frame rate. Uses the default DINO goal-distance target and standard ReWiND dataset inputs.
+Key additions: `--use_freeze` enables frozen-frame augmentation; `--freeze_ratio` controls the duplicate-frame rate. Uses the default linear progress target and standard ReWiND dataset inputs.
 
 Checkpoints are saved to:
 ```bash
@@ -134,6 +134,7 @@ python train_reward.py --wandb_entity YOUR_WANDB_ENTITY \
 --openx_embedding_path datasets/full_openx_embeddings_v2_train.h5 \
 --rewind \
 --progress_target_type optical_flow \
+--flow_missing_fallback error \
 --subsample_video \
 --clip_grad \
 --cosine_scheduler \
@@ -141,7 +142,7 @@ python train_reward.py --wandb_entity YOUR_WANDB_ENTITY \
 --worker 1
 ```
 
-Key addition: `--progress_target_type optical_flow` makes the loader read `flow_progress_<traj_id>`. Use `--flow_missing_fallback error` when checking that all H5 trajectories have flow targets.
+Key addition: `--progress_target_type optical_flow` makes the loader read `flow_progress_<traj_id>`. Use `--flow_missing_fallback error` so training fails instead of silently falling back if any sampled trajectory lacks flow targets.
 
 Checkpoints are saved to:
 ```bash
@@ -158,6 +159,7 @@ python train_reward.py --wandb_entity YOUR_WANDB_ENTITY \
 --use_freeze \
 --freeze_ratio 0.4 \
 --progress_target_type optical_flow \
+--flow_missing_fallback error \
 --subsample_video \
 --clip_grad \
 --cosine_scheduler \
