@@ -39,7 +39,8 @@ class ReWiNDTransformer(nn.Module):
             nn.Sigmoid()
         )
         # Attention mask for causal self-attention
-        self.attention_mask = nn.Transformer.generate_square_subsequent_mask(args.max_length + 1).to('cuda')
+        attention_mask = nn.Transformer.generate_square_subsequent_mask(args.max_length + 1)
+        self.register_buffer("attention_mask", attention_mask, persistent=False)
 
     def forward(self, video_frames, text_embed):
         # I ADDED THIS 2/3

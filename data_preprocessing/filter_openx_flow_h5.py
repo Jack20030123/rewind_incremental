@@ -1,3 +1,4 @@
+sbatch train_reward_openx_flow.job
 """Drop OpenX trajectories that are missing frame-difference flow targets.
 
 By default this script only requires each trajectory to have matching
