@@ -10,7 +10,7 @@
 #SBATCH --gpus-per-task=1
 #SBATCH --constraint="a100|l40s|v100|a40"
 #SBATCH --mem=96G
-#SBATCH --time=72:00:00
+#SBATCH --time=48:00:00
 
 set -eo pipefail
 
