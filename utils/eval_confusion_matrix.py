@@ -25,6 +25,22 @@ def padding_video(video_frames, max_length):
 
     return video_frames
 
+
+def normalize_embedding_sequence(video_embedding, max_length):
+    video_embedding = np.asarray(video_embedding)
+    if video_embedding.ndim == 1:
+        video_embedding = video_embedding.reshape(1, -1)
+    if video_embedding.shape[0] == 0:
+        return None
+
+    if video_embedding.shape[0] < max_length:
+        pad = np.repeat(video_embedding[:1], max_length - video_embedding.shape[0], axis=0)
+        video_embedding = np.concatenate([pad, video_embedding], axis=0)
+    elif video_embedding.shape[0] > max_length:
+        frame_idx = np.linspace(0, video_embedding.shape[0] - 1, max_length).astype(int)
+        video_embedding = video_embedding[frame_idx]
+    return video_embedding.astype(np.float32)
+
 def plot_matrix_as_image_for_paper(args, matrix, names, set, text, epoch = None, run_name = None):
     # Create a figure and axis
     # only keep 2 decimal points
@@ -92,14 +108,14 @@ def plot_confusion_matrix(h5_file, set, rewind_model, args, epoch = None, run_na
         traj_list = []
         for key in choose_keys:
             video_embedding = np.asarray(h5_file[env][key])
-            if args.subsample_video:
-                video_embedding = padding_video(video_embedding, args.max_length)
-            else:
-                video_embedding = padding_video(video_embedding, args.max_length)
-            if isinstance(video_embedding, torch.Tensor):
-                video_embedding = video_embedding.detach().cpu().numpy()
-            traj_list.append(video_embedding)
+            video_embedding = normalize_embedding_sequence(video_embedding, args.max_length)
+            if video_embedding is not None:
+                traj_list.append(video_embedding)
         if not traj_list:
+            continue
+        feature_dims = {traj.shape[1] for traj in traj_list}
+        if len(feature_dims) != 1:
+            print(f"Skipping {env}: inconsistent embedding dims {sorted(feature_dims)}")
             continue
         traj_data_all = np.stack(traj_list, axis=0)
         traj_data_all = torch.from_numpy(traj_data_all).to(device).float()
@@ -117,6 +133,5 @@ def plot_confusion_matrix(h5_file, set, rewind_model, args, epoch = None, run_na
         pred_org_progress_list.append(progress_org_list)
 
     plot_matrix_as_image_for_paper(args, pred_org_progress_list, eval_envs, set, text_list, epoch = epoch, run_name = run_name)
-
 
 
