@@ -69,6 +69,20 @@ def checkpoint_label(path):
     return stem
 
 
+def build_target(group, traj_key, target_type):
+    video_len = group[traj_key].shape[0]
+    if target_type == "linear":
+        return np.linspace(1.0 / video_len, 1.0, video_len, dtype=np.float32), 0.0
+
+    progress_key = f"flow_progress_{traj_key}"
+    signal_key = f"flow_signal_{traj_key}"
+    if progress_key not in group or signal_key not in group:
+        return None, None
+    target = np.asarray(group[progress_key], dtype=np.float32)
+    flow_signal = np.asarray(group[signal_key], dtype=np.float32)
+    return target, float(flow_signal.max())
+
+
 def load_model(checkpoint_path, device):
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model_args = checkpoint["args"]
@@ -83,11 +97,18 @@ def load_model(checkpoint_path, device):
     return model_args, model
 
 
-def evaluate_checkpoint(checkpoint_path, h5_path, output_dir, max_groups, max_trajs_per_group):
+def evaluate_checkpoint(
+    checkpoint_path,
+    h5_path,
+    output_dir,
+    max_groups,
+    max_trajs_per_group,
+    target_type,
+):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_args, model = load_model(checkpoint_path, device)
     max_length = int(model_args.max_length)
-    label = checkpoint_label(checkpoint_path)
+    label = f"{checkpoint_label(checkpoint_path)}_{target_type}"
     plot_dir = output_dir / label
     plot_dir.mkdir(parents=True, exist_ok=True)
 
@@ -103,18 +124,16 @@ def evaluate_checkpoint(checkpoint_path, h5_path, output_dir, max_groups, max_tr
             text = np.asarray(group["minilm_lang_embedding"], dtype=np.float32)[0]
             text_tensor = torch.from_numpy(text).unsqueeze(0).to(device).float()
 
-            keys = [
-                key
-                for key in trajectory_keys(group)
-                if f"flow_progress_{key}" in group and f"flow_signal_{key}" in group
-            ]
+            keys = trajectory_keys(group)
             if max_trajs_per_group > 0:
                 keys = keys[:max_trajs_per_group]
 
             for traj_key in keys:
                 video = np.asarray(group[traj_key], dtype=np.float32)
-                target = np.asarray(group[f"flow_progress_{traj_key}"], dtype=np.float32)
-                flow_signal = np.asarray(group[f"flow_signal_{traj_key}"], dtype=np.float32)
+                target, signal_max = build_target(group, traj_key, target_type)
+                if target is None:
+                    print(f"Skipping {group_name}/{traj_key}: missing flow target.")
+                    continue
                 if video.shape[0] != target.shape[0]:
                     print(
                         f"Skipping {group_name}/{traj_key}: video len {video.shape[0]} "
@@ -135,11 +154,11 @@ def evaluate_checkpoint(checkpoint_path, h5_path, output_dir, max_groups, max_tr
                 mse = float(np.mean((pred_valid - target_valid) ** 2))
                 target_final = float(target[-1])
                 target_max = float(target.max())
-                signal_max = float(flow_signal.max())
 
                 rows.append(
                     {
                         "checkpoint": label,
+                        "target_type": target_type,
                         "group": group_name,
                         "traj": traj_key,
                         "raw_len": int(video.shape[0]),
@@ -160,7 +179,7 @@ def evaluate_checkpoint(checkpoint_path, h5_path, output_dir, max_groups, max_tr
 
                 fig, ax = plt.subplots(figsize=(7, 4))
                 x = np.arange(valid_len)
-                ax.plot(x, target_valid, label="target flow_progress", linewidth=2)
+                ax.plot(x, target_valid, label=f"target {target_type}", linewidth=2)
                 ax.plot(x, pred_valid, label="predicted progress", linewidth=2)
                 ax.set_ylim(-0.05, 1.05)
                 ax.set_title(
@@ -178,6 +197,7 @@ def evaluate_checkpoint(checkpoint_path, h5_path, output_dir, max_groups, max_tr
     csv_path = output_dir / f"{label}_summary.csv"
     fieldnames = [
         "checkpoint",
+        "target_type",
         "group",
         "traj",
         "raw_len",
@@ -206,7 +226,7 @@ def evaluate_checkpoint(checkpoint_path, h5_path, output_dir, max_groups, max_tr
         bad_targets = sum(
             not np.isclose(row["target_end"], 1.0, atol=1e-4)
             for row in rows
-            if row["flow_signal_max"] > 0
+            if target_type == "linear" or row["flow_signal_max"] > 0
         )
         print(f"{label}: wrote {plotted} plots to {plot_dir}")
         print(f"{label}: wrote summary to {csv_path}")
@@ -214,7 +234,7 @@ def evaluate_checkpoint(checkpoint_path, h5_path, output_dir, max_groups, max_tr
             f"{label}: pearson mean={pearsons.mean():.4f}, "
             f"spearman mean={spearmans.mean():.4f}, mse mean={mses.mean():.4f}"
         )
-        print(f"{label}: nonzero-flow full targets not ending at 1: {bad_targets}/{len(rows)}")
+        print(f"{label}: full targets not ending at 1: {bad_targets}/{len(rows)}")
     else:
         print(f"{label}: no trajectories evaluated.")
 
@@ -223,12 +243,18 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Standalone checkpoint sanity check for optical-flow reward models. "
-            "Plots stored flow_progress targets against model predictions on full H5 trajectories."
+            "Plots full-trajectory targets against model predictions on H5 trajectories."
         )
     )
     parser.add_argument("--checkpoint-paths", nargs="+", required=True)
     parser.add_argument("--h5-path", required=True)
     parser.add_argument("--output-dir", default="flow_checkpoint_eval")
+    parser.add_argument(
+        "--target-type",
+        choices=["linear", "optical_flow"],
+        default="optical_flow",
+        help="Target to plot against predictions. Use linear for baseline ReWiND checkpoints.",
+    )
     parser.add_argument("--max-groups", type=int, default=5)
     parser.add_argument("--max-trajs-per-group", type=int, default=2)
     args = parser.parse_args()
@@ -243,6 +269,7 @@ def main():
             output_dir=output_dir,
             max_groups=args.max_groups,
             max_trajs_per_group=args.max_trajs_per_group,
+            target_type=args.target_type,
         )
 
 
