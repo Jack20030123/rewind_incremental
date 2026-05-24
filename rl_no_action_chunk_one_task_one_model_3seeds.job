@@ -38,7 +38,7 @@ if [ -f "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}" ]; then
   source "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}"
 fi
 
-: "${MODEL_NAME:?Set MODEL_NAME to one of: linear, flow, flow_freeze}"
+: "${MODEL_NAME:?Set MODEL_NAME to one of: linear, linear_freeze, flow, flow_freeze}"
 : "${ENV_ID:?Set ENV_ID to one of the supported 8 MetaWorld tasks}"
 : "${WANDB_API_KEY:?WANDB_API_KEY is not set. Export it before sbatch or store it in \$HOME/.config/wandb/env.}"
 
@@ -52,6 +52,10 @@ case "${MODEL_NAME}" in
     OFFLINE_H5_PATH="datasets/metaworld_labeled_nochunk_linear_epoch14.h5"
     REWARD_MODEL_PATH="${REWIND_REPO_PATH}/checkpoints/openx_linear_train_only_15ep/rewind_metaworld_epoch_14.pth"
     ;;
+  linear_freeze)
+    OFFLINE_H5_PATH="datasets/metaworld_labeled_nochunk_linear_freeze_epoch14.h5"
+    REWARD_MODEL_PATH="${REWIND_REPO_PATH}/checkpoints_freeze/openx_linear_freeze_15ep/rewind_metaworld_epoch_14.pth"
+    ;;
   flow)
     OFFLINE_H5_PATH="datasets/metaworld_labeled_nochunk_flow_epoch14.h5"
     REWARD_MODEL_PATH="${REWIND_REPO_PATH}/checkpoints_flow/openx_flow_15ep/rewind_metaworld_epoch_14.pth"
@@ -60,12 +64,8 @@ case "${MODEL_NAME}" in
     OFFLINE_H5_PATH="datasets/metaworld_labeled_nochunk_flow_freeze_epoch14.h5"
     REWARD_MODEL_PATH="${REWIND_REPO_PATH}/checkpoints_flow_freeze/openx_flow_freeze_15ep/rewind_metaworld_epoch_14.pth"
     ;;
-  linear_freeze)
-    echo "MODEL_NAME=linear_freeze is intentionally disabled until its epoch-14 checkpoint is ready." >&2
-    exit 1
-    ;;
   *)
-    echo "Unsupported MODEL_NAME=${MODEL_NAME}. Use one of: linear, flow, flow_freeze." >&2
+    echo "Unsupported MODEL_NAME=${MODEL_NAME}. Use one of: linear, linear_freeze, flow, flow_freeze." >&2
     exit 1
     ;;
 esac
