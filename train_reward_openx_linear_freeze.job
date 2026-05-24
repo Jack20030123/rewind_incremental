@@ -43,6 +43,14 @@ SEED=${SEED:-42}
 FREEZE_RATIO=${FREEZE_RATIO:-0.4}
 RUN_SUFFIX=${RUN_SUFFIX:-openx_linear_freeze_15ep}
 
+echo "===== Linear ReWiND + freeze args ====="
+echo "OPENX_EMBEDDING_PATH=${OPENX_EMBEDDING_PATH}"
+echo "H5_FOLDER_PATH=datasets_rewind_scratch"
+echo "PROGRESS_TARGET_TYPE=linear"
+echo "FREEZE_RATIO=${FREEZE_RATIO}"
+echo "CHECKPOINT_DIR=checkpoints_freeze/openx_linear_freeze_15ep"
+echo "======================================="
+
 python train_reward.py \
   --wandb_entity "${WANDB_ENTITY}" \
   --wandb_project "${WANDB_PROJECT}" \
@@ -59,6 +67,7 @@ python train_reward.py \
   --worker "${WORKER}" \
   --epochs 15 \
   --eval_interval 5 \
+  --no-eval_first_epoch \
   --seed "${SEED}" \
   --log_confusion_matrix \
   --confusion_matrix_final_only \

@@ -128,6 +128,16 @@ def main(args):
 
 
     print(rewind_model)
+    print("===== Reward Training Config =====")
+    print(f"progress_target_type: {args.progress_target_type}")
+    print(f"use_freeze: {args.use_freeze}")
+    print(f"freeze_ratio: {args.freeze_ratio}")
+    print(f"h5_folder_path: {args.h5_folder_path}")
+    print(f"openx_embedding_path: {args.openx_embedding_path}")
+    print(f"checkpoint_dir: {args.checkpoint_dir}")
+    print(f"eval_interval: {args.eval_interval}")
+    print(f"eval_first_epoch: {args.eval_first_epoch}")
+    print("==================================")
     base_optimizer = torch.optim.Adam(rewind_model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = CosineWithMinLRScheduler(base_optimizer, max_steps=300000, max_lr=args.lr, min_lr=1e-5)
 
@@ -149,7 +159,11 @@ def main(args):
             )
 
         rewind_model.eval()
-        should_eval = epoch == 0 or (epoch + 1) % args.eval_interval == 0 or (epoch + 1) == args.epochs
+        should_eval = (
+            (args.eval_first_epoch and epoch == 0)
+            or (epoch + 1) % args.eval_interval == 0
+            or (epoch + 1) == args.epochs
+        )
         should_eval_metrics = args.progress_target_type == "optical_flow" or should_eval
         if should_eval_metrics:
             with torch.no_grad():
@@ -241,6 +255,7 @@ if __name__ == "__main__":
     argparser.add_argument('--clip_grad', action='store_true')
     argparser.add_argument('--extra_data_ratio', type=float, default=0.2)
     argparser.add_argument('--eval_interval', type=int, default=1)
+    argparser.add_argument('--eval_first_epoch', action=argparse.BooleanOptionalAction, default=True)
     argparser.add_argument('--rewind_ratio', type=float, default=0.8)
     argparser.add_argument('--pdf', action='store_true', help="Whether to save confusion matrix as PDF")
     argparser.add_argument('--use_freeze', action='store_true')
