@@ -4,9 +4,9 @@ import torch
 import numpy as np
 from tqdm import tqdm
 import matplotlib
-import matplotlib.pyplot as plt
 
 matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 def padding_video(video_frames, max_length):
     video_length = len(video_frames)
@@ -45,38 +45,60 @@ def plot_matrix_as_image_for_paper(args, matrix, names, set, text, epoch = None,
     # Create a figure and axis
     # only keep 2 decimal points
 
-    matrix = np.array(matrix)
-    if matrix.size == 0:
+    raw_matrix = np.array(matrix, dtype=np.float32)
+    if raw_matrix.size == 0:
         print(f"Skipping {set} confusion matrix at epoch {epoch}: no valid rows.")
         return
-    m_min = matrix.min()
-    m_max = matrix.max()
+    m_min = raw_matrix.min()
+    m_max = raw_matrix.max()
 
     if m_max == m_min:
-        matrix= np.zeros_like(matrix)
+        matrix = np.zeros_like(raw_matrix)
     else:
-        matrix = (matrix - m_min) / (m_max - m_min)
+        matrix = (raw_matrix - m_min) / (m_max - m_min)
 
     # keep 2 digit first 2 digit after decimal point {val:.2f}
     matrix = np.round(matrix, 2)
     # fig, ax = plt.subplots(figsize=(len(matrix), len(matrix)))
     fig, ax = plt.subplots(figsize=(len(matrix) * 1.25, len(matrix) * 1))
 
-    cax = ax.matshow(matrix, cmap="Blues", interpolation="nearest")  # originally was viridis
+    ax.matshow(matrix, cmap="Blues", interpolation="nearest")  # originally was viridis
 
     ax.set_xticks([])
     ax.set_yticks([])
 
     plt.tight_layout()
 
-    wandb.log({f"confusion_matrix/{set}_confusion_matrix_Rewind": wandb.Image(fig, caption=f"Epoch {epoch}")})
+    folder_name = run_name or "default"
+    output_dir = os.path.join("confusion_matrix_for_paper", folder_name)
+    os.makedirs(output_dir, exist_ok=True)
+    png_path = os.path.join(output_dir, f"confusion_matrix_{set}_epoch_{epoch}.png")
+    plt.savefig(png_path, bbox_inches="tight")
+
+    diag = np.diag(raw_matrix)
+    if raw_matrix.shape[0] == raw_matrix.shape[1] and raw_matrix.shape[0] > 1:
+        off_diag_mask = ~np.eye(raw_matrix.shape[0], dtype=bool)
+        off_diag = raw_matrix[off_diag_mask]
+        diagonal_margin = float(diag.mean() - off_diag.mean())
+        off_diag_mean = float(off_diag.mean())
+    else:
+        diagonal_margin = 0.0
+        off_diag_mean = 0.0
+
+    wandb.log(
+        {
+            f"confusion_matrix/{set}_confusion_matrix_Rewind": wandb.Image(
+                png_path, caption=f"Epoch {epoch}"
+            ),
+            f"confusion_matrix/{set}_diagonal_mean": float(diag.mean()) if diag.size else 0.0,
+            f"confusion_matrix/{set}_off_diagonal_mean": off_diag_mean,
+            f"confusion_matrix/{set}_diagonal_margin": diagonal_margin,
+            "epoch": epoch,
+        }
+    )
+    print(f"Logged {set} confusion matrix to W&B and saved {png_path}")
     if args.pdf:
-        folder_name = run_name
-        if not os.path.exists(f"confusion_matrix_for_paper"):
-            os.makedirs(f"confusion_matrix_for_paper")
-        if not os.path.exists(f"confusion_matrix_for_paper/{folder_name}"):
-            os.makedirs(f"confusion_matrix_for_paper/{folder_name}")
-        pdf_path = f"confusion_matrix_for_paper/{folder_name}/confusion_matrix_{set}_epoch_{epoch}.pdf"
+        pdf_path = os.path.join(output_dir, f"confusion_matrix_{set}_epoch_{epoch}.pdf")
         plt.savefig(pdf_path, bbox_inches="tight")
     plt.close(fig)  # Close the figure to free memory
 

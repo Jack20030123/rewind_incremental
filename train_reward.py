@@ -166,6 +166,7 @@ def main(args):
                     epoch == 0 or (epoch + 1) == args.epochs
                 )
                 if should_log_confusion and args.extra_data_type == "metaworld":
+                    print(f"Logging train/eval confusion matrices at epoch {epoch}")
                     plot_confusion_matrix(
                         h5_file=h5_train_eval_file,
                         set="train",
