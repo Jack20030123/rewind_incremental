@@ -1,0 +1,120 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=rewind_rl_1x1x3
+#SBATCH --output=logs/%x-%A_%a.out
+#SBATCH --error=logs/%x-%A_%a.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-task=1
+#SBATCH --constraint="a100|l40s|v100|a40"
+#SBATCH --mem=32G
+#SBATCH --time=24:00:00
+#SBATCH --array=0-2
+
+set -eo pipefail
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate rewind
+
+if [ -d /usr/lib/nvidia ]; then
+  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/usr/lib/nvidia"
+fi
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/home1/chunheil/.mujoco/mujoco210/bin"
+
+if [ -f "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}" ]; then
+  source "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}"
+fi
+
+: "${MODEL_NAME:?Set MODEL_NAME to one of: linear, flow, flow_freeze}"
+: "${ENV_ID:?Set ENV_ID to one of the supported 8 MetaWorld tasks}"
+: "${WANDB_API_KEY:?WANDB_API_KEY is not set. Export it before sbatch or store it in \$HOME/.config/wandb/env.}"
+
+export WANDB_API_KEY
+export WANDB_ENTITY="${WANDB_ENTITY:-lincolnlam-university-of-southern-california}"
+export WANDB_PROJECT="${WANDB_PROJECT:-rewind-policy-training}"
+export WANDB_SILENT=true
+
+case "${MODEL_NAME}" in
+  linear)
+    OFFLINE_H5_PATH="../datasets/metaworld_labeled_linear_epoch14.h5"
+    REWARD_MODEL_PATH="../checkpoints/openx_linear_train_only_15ep/rewind_metaworld_epoch_14.pth"
+    ;;
+  flow)
+    OFFLINE_H5_PATH="../datasets/metaworld_labeled_flow_epoch14.h5"
+    REWARD_MODEL_PATH="../checkpoints_flow/openx_flow_15ep/rewind_metaworld_epoch_14.pth"
+    ;;
+  flow_freeze)
+    OFFLINE_H5_PATH="../datasets/metaworld_labeled_flow_freeze_epoch14.h5"
+    REWARD_MODEL_PATH="../checkpoints_flow_freeze/openx_flow_freeze_15ep/rewind_metaworld_epoch_14.pth"
+    ;;
+  linear_freeze)
+    echo "MODEL_NAME=linear_freeze is intentionally disabled until its epoch-14 checkpoint is ready." >&2
+    exit 1
+    ;;
+  *)
+    echo "Unsupported MODEL_NAME=${MODEL_NAME}. Use one of: linear, flow, flow_freeze." >&2
+    exit 1
+    ;;
+esac
+
+case "${ENV_ID}" in
+  button-press-wall-v2|coffee-button-v2|door-close-v2|door-lock-v2|faucet-close-v2|handle-pull-v2|sweep-into-v2|window-close-v2)
+    ;;
+  *)
+    echo "Unsupported ENV_ID=${ENV_ID}." >&2
+    echo "Use one of: button-press-wall-v2 coffee-button-v2 door-close-v2 door-lock-v2 faucet-close-v2 handle-pull-v2 sweep-into-v2 window-close-v2" >&2
+    exit 1
+    ;;
+esac
+
+declare -a SEEDS=(0 1 2)
+SEED="${SEEDS[$SLURM_ARRAY_TASK_ID]}"
+
+if [ -z "${SEED}" ]; then
+  echo "Invalid SLURM_ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID}; expected 0, 1, or 2." >&2
+  exit 1
+fi
+
+cd /home1/chunheil/ReWiND/metaworld_policy_training
+mkdir -p logs
+
+if [ ! -f "${OFFLINE_H5_PATH}" ]; then
+  echo "Missing offline labeled H5 for ${MODEL_NAME}: ${OFFLINE_H5_PATH}" >&2
+  echo "Run: sbatch label_reward_models_ready_epoch14.job" >&2
+  exit 1
+fi
+
+if [ ! -f "${REWARD_MODEL_PATH}" ]; then
+  echo "Missing reward checkpoint for ${MODEL_NAME}: ${REWARD_MODEL_PATH}" >&2
+  exit 1
+fi
+
+GROUP="rl_${MODEL_NAME}_epoch14_${ENV_ID}"
+LOGDIR="./logs/${GROUP}/seed_${SEED}"
+
+echo "===== ReWiND action-chunk RL run ====="
+echo "MODEL_NAME:        ${MODEL_NAME}"
+echo "ENV_ID:            ${ENV_ID}"
+echo "SEED:              ${SEED}"
+echo "OFFLINE_H5_PATH:   ${OFFLINE_H5_PATH}"
+echo "REWARD_MODEL_PATH: ${REWARD_MODEL_PATH}"
+echo "GROUP:             ${GROUP}"
+echo "LOGDIR:            ${LOGDIR}"
+echo "======================================"
+
+python train_policy.py \
+  metaworld=off_on_15 \
+  algorithm=wsrl_iql \
+  reward=rewind_metaworld \
+  logging.wandb_entity_name="${WANDB_ENTITY}" \
+  logging.wandb_project_name="${WANDB_PROJECT}" \
+  logging.wandb_group_name="${GROUP}" \
+  logging.log_dir="${LOGDIR}" \
+  offline_training.offline_training_steps=15000 \
+  online_training.total_time_steps=100000 \
+  general_training.seed="${SEED}" \
+  environment.env_id="${ENV_ID}" \
+  offline_training.offline_h5_path="${OFFLINE_H5_PATH}" \
+  reward_model.model_path="${REWARD_MODEL_PATH}"
