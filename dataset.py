@@ -43,6 +43,9 @@ class ReWiNDVideoDataset(Dataset):
         return random.choice(traj_lists)
 
     def _load_flow_progress(self, data_group, traj_name):
+        if self.args.progress_target_type != "optical_flow":
+            return None
+
         flow_key = f"flow_progress_{traj_name}"
         if flow_key in data_group:
             return np.asarray(data_group[flow_key], dtype=np.float32)

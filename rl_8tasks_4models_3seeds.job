@@ -1,0 +1,129 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=rewind_rl_8x4x3
+#SBATCH --output=logs/%x-%A_%a.out
+#SBATCH --error=logs/%x-%A_%a.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-task=1
+#SBATCH --constraint="a100|l40s|v100|a40"
+#SBATCH --mem=32G
+#SBATCH --time=24:00:00
+#SBATCH --array=0-95
+
+set -eo pipefail
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate rewind
+
+if [ -d /usr/lib/nvidia ]; then
+  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/usr/lib/nvidia"
+fi
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/home1/chunheil/.mujoco/mujoco210/bin"
+
+if [ -f "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}" ]; then
+  source "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}"
+fi
+
+: "${WANDB_API_KEY:?WANDB_API_KEY is not set. Export it before sbatch or store it in \$HOME/.config/wandb/env.}"
+export WANDB_API_KEY
+export WANDB_ENTITY="${WANDB_ENTITY:-lincolnlam-university-of-southern-california}"
+export WANDB_PROJECT="${WANDB_PROJECT:-rewind-policy-training}"
+export WANDB_SILENT=true
+
+cd /home1/chunheil/ReWiND/metaworld_policy_training
+mkdir -p logs
+
+declare -a TASKS=(
+  "button-press-wall-v2"
+  "coffee-button-v2"
+  "door-close-v2"
+  "door-lock-v2"
+  "faucet-close-v2"
+  "handle-pull-v2"
+  "sweep-into-v2"
+  "window-close-v2"
+)
+
+declare -a SEEDS=(0 1 2)
+
+declare -a MODEL_NAMES=(
+  "linear"
+  "linear_freeze"
+  "flow"
+  "flow_freeze"
+)
+
+declare -a OFFLINE_H5S=(
+  "../datasets/metaworld_labeled_linear_epoch14.h5"
+  "../datasets/metaworld_labeled_linear_freeze_epoch14.h5"
+  "../datasets/metaworld_labeled_flow_epoch14.h5"
+  "../datasets/metaworld_labeled_flow_freeze_epoch14.h5"
+)
+
+declare -a REWARD_MODEL_PATHS=(
+  "../checkpoints/openx_linear_train_only_15ep/rewind_metaworld_epoch_14.pth"
+  "../checkpoints_freeze/openx_linear_freeze_15ep/rewind_metaworld_epoch_14.pth"
+  "../checkpoints_flow/openx_flow_15ep/rewind_metaworld_epoch_14.pth"
+  "../checkpoints_flow_freeze/openx_flow_freeze_15ep/rewind_metaworld_epoch_14.pth"
+)
+
+TASK_COUNT=${#TASKS[@]}
+SEED_COUNT=${#SEEDS[@]}
+MODEL_COUNT=${#MODEL_NAMES[@]}
+
+idx=${SLURM_ARRAY_TASK_ID}
+model_idx=$(( idx / (TASK_COUNT * SEED_COUNT) ))
+rem=$(( idx % (TASK_COUNT * SEED_COUNT) ))
+task_idx=$(( rem / SEED_COUNT ))
+seed_idx=$(( rem % SEED_COUNT ))
+
+MODEL_NAME=${MODEL_NAMES[$model_idx]}
+ENV_ID=${TASKS[$task_idx]}
+SEED=${SEEDS[$seed_idx]}
+OFFLINE_H5_PATH=${OFFLINE_H5S[$model_idx]}
+REWARD_MODEL_PATH=${REWARD_MODEL_PATHS[$model_idx]}
+
+if [ -z "${MODEL_NAME}" ] || [ -z "${ENV_ID}" ] || [ -z "${SEED}" ]; then
+  echo "Invalid array index ${SLURM_ARRAY_TASK_ID}" >&2
+  exit 1
+fi
+if [ ! -f "${OFFLINE_H5_PATH}" ]; then
+  echo "Missing offline labeled H5 for ${MODEL_NAME}: ${OFFLINE_H5_PATH}" >&2
+  echo "Run: sbatch label_reward_models_epoch14.job" >&2
+  exit 1
+fi
+if [ ! -f "${REWARD_MODEL_PATH}" ]; then
+  echo "Missing reward checkpoint for ${MODEL_NAME}: ${REWARD_MODEL_PATH}" >&2
+  exit 1
+fi
+
+GROUP=${GROUP:-"rl_${MODEL_NAME}_epoch14_${ENV_ID}"}
+LOGDIR=${LOGDIR:-"./logs/${GROUP}/seed_${SEED}"}
+
+echo "===== ReWiND RL run ====="
+echo "array_id:          ${SLURM_ARRAY_TASK_ID}"
+echo "model:             ${MODEL_NAME}"
+echo "env_id:            ${ENV_ID}"
+echo "seed:              ${SEED}"
+echo "offline_h5_path:   ${OFFLINE_H5_PATH}"
+echo "reward_model_path: ${REWARD_MODEL_PATH}"
+echo "group:             ${GROUP}"
+echo "logdir:            ${LOGDIR}"
+echo "========================="
+
+python train_policy.py \
+  metaworld=off_on_15 \
+  algorithm=wsrl_iql \
+  reward=rewind_metaworld \
+  logging.wandb_entity_name="${WANDB_ENTITY}" \
+  logging.wandb_project_name="${WANDB_PROJECT}" \
+  logging.wandb_group_name="${GROUP}" \
+  logging.log_dir="${LOGDIR}" \
+  offline_training.offline_training_steps=15000 \
+  general_training.seed="${SEED}" \
+  environment.env_id="${ENV_ID}" \
+  offline_training.offline_h5_path="${OFFLINE_H5_PATH}" \
+  reward_model.model_path="${REWARD_MODEL_PATH}"
