@@ -61,6 +61,7 @@ python train_reward.py \
   --eval_interval 5 \
   --seed "${SEED}" \
   --log_confusion_matrix \
+  --confusion_matrix_final_only \
   --log_pred_target_plot \
   --run_suffix "${RUN_SUFFIX}" \
   --checkpoint_dir checkpoints_freeze/openx_linear_freeze_15ep
