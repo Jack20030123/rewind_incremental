@@ -29,6 +29,11 @@ def trajectory_keys(group):
     ]
 
 
+def load_text_embedding(group):
+    embedding = np.asarray(group["minilm_lang_embedding"], dtype=np.float32)
+    return embedding.reshape(-1, embedding.shape[-1])[0]
+
+
 def normalize_embedding_sequence(video_embedding, max_length):
     video_embedding = np.asarray(video_embedding, dtype=np.float32)
     if video_embedding.ndim == 1:
@@ -74,7 +79,7 @@ def compute_confusion_matrix(h5_path, model, max_length, max_envs):
 
         text_embeddings = []
         for env in envs:
-            embedding = np.asarray(h5_file[env]["minilm_lang_embedding"], dtype=np.float32)[0]
+            embedding = load_text_embedding(h5_file[env])
             text_embeddings.append(embedding.reshape(1, -1))
         text_embeddings = torch.from_numpy(np.concatenate(text_embeddings, axis=0)).to(device).float()
 

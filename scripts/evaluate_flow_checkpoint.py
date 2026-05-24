@@ -29,6 +29,11 @@ def trajectory_keys(group):
     ]
 
 
+def load_text_embedding(group):
+    embedding = np.asarray(group["minilm_lang_embedding"], dtype=np.float32)
+    return embedding.reshape(-1, embedding.shape[-1])[0]
+
+
 def normalize_sequence(values, max_length, pad_value=None):
     values = np.asarray(values)
     if values.shape[0] == 0:
@@ -121,7 +126,7 @@ def evaluate_checkpoint(
 
         for group_name in group_names:
             group = h5_file[group_name]
-            text = np.asarray(group["minilm_lang_embedding"], dtype=np.float32)[0]
+            text = load_text_embedding(group)
             text_tensor = torch.from_numpy(text).unsqueeze(0).to(device).float()
 
             keys = trajectory_keys(group)
