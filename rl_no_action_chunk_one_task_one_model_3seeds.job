@@ -36,6 +36,7 @@ if [ -f /usr/lib/x86_64-linux-gnu/libstdc++.so.6 ]; then
   export LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libstdc++.so.6${LD_PRELOAD:+:${LD_PRELOAD}}"
 fi
 export MUJOCO_GL="${MUJOCO_GL:-egl}"
+export HYDRA_FULL_ERROR="${HYDRA_FULL_ERROR:-1}"
 
 if [ -f "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}" ]; then
   source "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}"
@@ -122,13 +123,22 @@ echo "GROUP:             ${GROUP}"
 echo "LOGDIR:            ${LOGDIR}"
 echo "OFFLINE_STEPS:     ${OFFLINE_TRAINING_STEPS}"
 echo "ONLINE_STEPS:      ${ONLINE_TOTAL_TIME_STEPS}"
+echo "MUJOCO_GL:         ${MUJOCO_GL}"
+echo "DISPLAY:           ${DISPLAY:-unset}"
+echo "LD_PRELOAD:        ${LD_PRELOAD:-unset}"
 echo "========================================="
 
-if command -v xvfb-run >/dev/null 2>&1; then
-  PYTHON_RUNNER=(xvfb-run -a python)
+if [ "${USE_XVFB:-1}" = "1" ]; then
+  if ! command -v xvfb-run >/dev/null 2>&1; then
+    echo "xvfb-run is required for no-action-chunk MetaWorld rendering on headless SLURM nodes." >&2
+    echo "Try loading an Xvfb/X11 module on CARC, or submit with USE_XVFB=0 only if DISPLAY is already valid." >&2
+    exit 1
+  fi
+  PYTHON_RUNNER=(xvfb-run -a -s "-screen 0 1400x900x24" python)
 else
   PYTHON_RUNNER=(python)
 fi
+echo "PYTHON_RUNNER:     ${PYTHON_RUNNER[*]}"
 
 "${PYTHON_RUNNER[@]}" test_scripts/test_iql.py \
   metaworld=off_on_15 \
