@@ -32,6 +32,9 @@ if [ -d /usr/lib/nvidia ]; then
   export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/usr/lib/nvidia"
 fi
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/home1/chunheil/.mujoco/mujoco210/bin"
+if [ -f /usr/lib/x86_64-linux-gnu/libstdc++.so.6 ]; then
+  export LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libstdc++.so.6${LD_PRELOAD:+:${LD_PRELOAD}}"
+fi
 export MUJOCO_GL="${MUJOCO_GL:-egl}"
 
 if [ -f "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}" ]; then
@@ -104,6 +107,8 @@ fi
 
 GROUP="rl_nochunk_${MODEL_NAME}_epoch14_${ENV_ID}"
 LOGDIR="./logs/${GROUP}/seed_${SEED}"
+OFFLINE_TRAINING_STEPS="${OFFLINE_TRAINING_STEPS:-15000}"
+ONLINE_TOTAL_TIME_STEPS="${ONLINE_TOTAL_TIME_STEPS:-100000}"
 
 echo "===== ReWiND no-action-chunk RL run ====="
 echo "REPO_PATH:         ${NO_ACTION_CHUNK_REPO_PATH}"
@@ -115,9 +120,17 @@ echo "OFFLINE_H5_PATH:   ${OFFLINE_H5_PATH}"
 echo "REWARD_MODEL_PATH: ${REWARD_MODEL_PATH}"
 echo "GROUP:             ${GROUP}"
 echo "LOGDIR:            ${LOGDIR}"
+echo "OFFLINE_STEPS:     ${OFFLINE_TRAINING_STEPS}"
+echo "ONLINE_STEPS:      ${ONLINE_TOTAL_TIME_STEPS}"
 echo "========================================="
 
-python test_scripts/test_iql.py \
+if command -v xvfb-run >/dev/null 2>&1; then
+  PYTHON_RUNNER=(xvfb-run -a python)
+else
+  PYTHON_RUNNER=(python)
+fi
+
+"${PYTHON_RUNNER[@]}" test_scripts/test_iql.py \
   metaworld=off_on_15 \
   algorithm=wsrl_iql \
   reward=rewind \
@@ -126,8 +139,8 @@ python test_scripts/test_iql.py \
   logging.wandb_project_name="${WANDB_PROJECT}" \
   logging.wandb_group_name="${GROUP}" \
   logging.log_dir="${LOGDIR}" \
-  offline_training.offline_training_steps=15000 \
-  online_training.total_time_steps=100000 \
+  offline_training.offline_training_steps="${OFFLINE_TRAINING_STEPS}" \
+  online_training.total_time_steps="${ONLINE_TOTAL_TIME_STEPS}" \
   general_training.seed="${SEED}" \
   environment.env_id="${ENV_ID}" \
   offline_training.offline_h5_path="${OFFLINE_H5_PATH}" \

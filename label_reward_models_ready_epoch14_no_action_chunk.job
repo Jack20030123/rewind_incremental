@@ -31,6 +31,9 @@ if [ -d /usr/lib/nvidia ]; then
   export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/usr/lib/nvidia"
 fi
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/home1/chunheil/.mujoco/mujoco210/bin"
+if [ -f /usr/lib/x86_64-linux-gnu/libstdc++.so.6 ]; then
+  export LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libstdc++.so.6${LD_PRELOAD:+:${LD_PRELOAD}}"
+fi
 export MUJOCO_GL="${MUJOCO_GL:-egl}"
 export OPENBLAS_NUM_THREADS=1
 export OMP_NUM_THREADS=1
