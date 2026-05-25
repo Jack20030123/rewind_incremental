@@ -95,6 +95,21 @@ fi
 cd "${NO_ACTION_CHUNK_REPO_PATH}"
 mkdir -p logs
 
+METAWORLD_ENV_FILE="envs/metaworld_envs/metaworld.py"
+if [ -f "${METAWORLD_ENV_FILE}" ] && grep -q "return self.base_env.render()" "${METAWORLD_ENV_FILE}"; then
+  echo "Patching ${METAWORLD_ENV_FILE} to preserve render(mode=...) for headless rgb_array rendering."
+  python - <<'PY'
+from pathlib import Path
+
+path = Path("envs/metaworld_envs/metaworld.py")
+text = path.read_text()
+old = "return self.base_env.render()"
+new = "return self.base_env.render(mode=mode)"
+if old in text:
+    path.write_text(text.replace(old, new, 1))
+PY
+fi
+
 if [ ! -f "${OFFLINE_H5_PATH}" ]; then
   echo "Missing no-action-chunk labeled H5 for ${MODEL_NAME}: ${OFFLINE_H5_PATH}" >&2
   echo "Run: sbatch ${REWIND_REPO_PATH}/label_reward_models_ready_epoch14_no_action_chunk.job" >&2
@@ -129,12 +144,12 @@ echo "LD_PRELOAD:        ${LD_PRELOAD:-unset}"
 echo "========================================="
 
 if [ "${USE_XVFB:-1}" = "1" ]; then
-  if ! command -v xvfb-run >/dev/null 2>&1; then
-    echo "xvfb-run is required for no-action-chunk MetaWorld rendering on headless SLURM nodes." >&2
-    echo "Try loading an Xvfb/X11 module on CARC, or submit with USE_XVFB=0 only if DISPLAY is already valid." >&2
-    exit 1
+  if command -v xvfb-run >/dev/null 2>&1; then
+    PYTHON_RUNNER=(xvfb-run -a -s "-screen 0 1400x900x24" python)
+  else
+    echo "xvfb-run not found; using Python directly with patched rgb_array rendering and MUJOCO_GL=${MUJOCO_GL}."
+    PYTHON_RUNNER=(python)
   fi
-  PYTHON_RUNNER=(xvfb-run -a -s "-screen 0 1400x900x24" python)
 else
   PYTHON_RUNNER=(python)
 fi
