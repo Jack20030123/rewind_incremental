@@ -95,20 +95,34 @@ fi
 cd "${NO_ACTION_CHUNK_REPO_PATH}"
 mkdir -p logs
 
-METAWORLD_ENV_FILE="envs/metaworld_envs/metaworld.py"
-if [ -f "${METAWORLD_ENV_FILE}" ] && grep -q "return self.base_env.render()" "${METAWORLD_ENV_FILE}"; then
-  echo "Patching ${METAWORLD_ENV_FILE} to preserve render(mode=...) for headless rgb_array rendering."
-  python - <<'PY'
+echo "Patching no-action-chunk render calls for headless rgb_array rendering."
+python - <<'PY'
 from pathlib import Path
 
-path = Path("envs/metaworld_envs/metaworld.py")
-text = path.read_text()
-old = "return self.base_env.render()"
-new = "return self.base_env.render(mode=mode)"
-if old in text:
-    path.write_text(text.replace(old, new, 1))
+patches = {
+    Path("envs/metaworld_envs/metaworld.py"): {
+        "return self.base_env.render()": "return self.base_env.render(mode=mode)",
+    },
+    Path("envs/metaworld_envs/wrappers.py"): {
+        "image = self.env.render()": "image = self.env.render(mode=\"rgb_array\")",
+        "frame = self.env.render()": "frame = self.env.render(mode=\"rgb_array\")",
+    },
+}
+
+for path, replacements in patches.items():
+    if not path.exists():
+        print(f"Patch skipped; missing {path}")
+        continue
+    text = path.read_text()
+    original = text
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    if text != original:
+        path.write_text(text)
+        print(f"Patched {path}")
+    else:
+        print(f"No patch needed for {path}")
 PY
-fi
 
 if [ ! -f "${OFFLINE_H5_PATH}" ]; then
   echo "Missing no-action-chunk labeled H5 for ${MODEL_NAME}: ${OFFLINE_H5_PATH}" >&2
