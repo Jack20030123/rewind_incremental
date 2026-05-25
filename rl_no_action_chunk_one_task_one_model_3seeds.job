@@ -101,11 +101,14 @@ from pathlib import Path
 
 patches = {
     Path("envs/metaworld_envs/metaworld.py"): {
-        "return self.base_env.render()": "return self.base_env.render(mode=mode)",
+        "return self.base_env.render()": "return self.base_env.render(mode)",
+        "return self.base_env.render(mode=mode)": "return self.base_env.render(mode)",
     },
     Path("envs/metaworld_envs/wrappers.py"): {
-        "image = self.env.render()": "image = self.env.render(mode=\"rgb_array\")",
-        "frame = self.env.render()": "frame = self.env.render(mode=\"rgb_array\")",
+        "image = self.env.render()": "image = self.env.render(\"rgb_array\")",
+        "image = self.env.render(mode=\"rgb_array\")": "image = self.env.render(\"rgb_array\")",
+        "frame = self.env.render()": "frame = self.env.render(\"rgb_array\")",
+        "frame = self.env.render(mode=\"rgb_array\")": "frame = self.env.render(\"rgb_array\")",
     },
 }
 
