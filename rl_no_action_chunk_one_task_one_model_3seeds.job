@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --account=biyik_1165
 #SBATCH --job-name=rewind_nochunk_rl_1x1x3
-#SBATCH --output=logs/%x-%A_%a.out
-#SBATCH --error=logs/%x-%A_%a.err
+#SBATCH --output=/scratch1/chunheil/ReWiND_slurm_logs/%x-%A_%a.out
+#SBATCH --error=/scratch1/chunheil/ReWiND_slurm_logs/%x-%A_%a.err
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -17,6 +17,8 @@ set -eo pipefail
 
 REWIND_REPO_PATH="${REWIND_REPO_PATH:-/home1/chunheil/ReWiND}"
 NO_ACTION_CHUNK_REPO_PATH="${NO_ACTION_CHUNK_REPO_PATH:-/home1/chunheil/rewind_no-action-chunk_baseline}"
+SCRATCH_RUN_ROOT="${SCRATCH_RUN_ROOT:-/scratch1/chunheil/no_action_chunk_rl_runs}"
+SCRATCH_SLURM_LOG_ROOT="${SCRATCH_SLURM_LOG_ROOT:-/scratch1/chunheil/ReWiND_slurm_logs}"
 
 if [ ! -d "${NO_ACTION_CHUNK_REPO_PATH}" ]; then
   echo "Missing no-action-chunk repo: ${NO_ACTION_CHUNK_REPO_PATH}" >&2
@@ -50,6 +52,10 @@ export WANDB_API_KEY
 export WANDB_ENTITY="${WANDB_ENTITY:-lincolnlam-university-of-southern-california}"
 export WANDB_PROJECT="${WANDB_PROJECT:-rewind-policy-training}"
 export WANDB_SILENT=true
+export WANDB_DIR="${WANDB_DIR:-${SCRATCH_RUN_ROOT}/wandb}"
+export WANDB_CACHE_DIR="${WANDB_CACHE_DIR:-${SCRATCH_RUN_ROOT}/wandb_cache}"
+export WANDB_CONFIG_DIR="${WANDB_CONFIG_DIR:-${SCRATCH_RUN_ROOT}/wandb_config}"
+mkdir -p "${SCRATCH_RUN_ROOT}" "${SCRATCH_SLURM_LOG_ROOT}" "${WANDB_DIR}" "${WANDB_CACHE_DIR}" "${WANDB_CONFIG_DIR}"
 
 case "${MODEL_NAME}" in
   linear)
@@ -93,7 +99,6 @@ if [ -z "${SEED}" ]; then
 fi
 
 cd "${NO_ACTION_CHUNK_REPO_PATH}"
-mkdir -p logs
 
 echo "Patching no-action-chunk render calls for headless rgb_array rendering."
 python - <<'PY'
@@ -139,9 +144,10 @@ if [ ! -f "${REWARD_MODEL_PATH}" ]; then
 fi
 
 GROUP="rl_nochunk_${MODEL_NAME}_epoch14_${ENV_ID}"
-LOGDIR="./logs/${GROUP}/seed_${SEED}"
+LOGDIR="${LOGDIR:-${SCRATCH_RUN_ROOT}/${GROUP}/seed_${SEED}}"
 OFFLINE_TRAINING_STEPS="${OFFLINE_TRAINING_STEPS:-15000}"
 ONLINE_TOTAL_TIME_STEPS="${ONLINE_TOTAL_TIME_STEPS:-100000}"
+mkdir -p "${LOGDIR}"
 
 echo "===== ReWiND no-action-chunk RL run ====="
 echo "REPO_PATH:         ${NO_ACTION_CHUNK_REPO_PATH}"
@@ -153,6 +159,8 @@ echo "OFFLINE_H5_PATH:   ${OFFLINE_H5_PATH}"
 echo "REWARD_MODEL_PATH: ${REWARD_MODEL_PATH}"
 echo "GROUP:             ${GROUP}"
 echo "LOGDIR:            ${LOGDIR}"
+echo "WANDB_DIR:         ${WANDB_DIR}"
+echo "SCRATCH_RUN_ROOT:  ${SCRATCH_RUN_ROOT}"
 echo "OFFLINE_STEPS:     ${OFFLINE_TRAINING_STEPS}"
 echo "ONLINE_STEPS:      ${ONLINE_TOTAL_TIME_STEPS}"
 echo "MUJOCO_GL:         ${MUJOCO_GL}"
