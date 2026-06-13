@@ -1,0 +1,174 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=rewind_nochunk_baseline_1x3
+#SBATCH --output=/scratch1/chunheil/ReWiND_slurm_logs/%x-%A_%a.out
+#SBATCH --error=/scratch1/chunheil/ReWiND_slurm_logs/%x-%A_%a.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-task=1
+#SBATCH --constraint="a100|l40s|v100|a40"
+#SBATCH --mem=32G
+#SBATCH --time=36:00:00
+#SBATCH --array=0-2
+
+set -eo pipefail
+
+REWIND_REPO_PATH="${REWIND_REPO_PATH:-/home1/chunheil/ReWiND}"
+NO_ACTION_CHUNK_REPO_PATH="${NO_ACTION_CHUNK_REPO_PATH:-/home1/chunheil/rewind_no-action-chunk_baseline}"
+SCRATCH_RUN_ROOT="${SCRATCH_RUN_ROOT:-/scratch1/chunheil/no_action_chunk_rewind_baseline_runs}"
+SCRATCH_SLURM_LOG_ROOT="${SCRATCH_SLURM_LOG_ROOT:-/scratch1/chunheil/ReWiND_slurm_logs}"
+
+if [ ! -d "${NO_ACTION_CHUNK_REPO_PATH}" ]; then
+  echo "Missing no-action-chunk repo: ${NO_ACTION_CHUNK_REPO_PATH}" >&2
+  echo "Clone it without overwriting ${REWIND_REPO_PATH}, for example:" >&2
+  echo "  git clone https://github.com/Jack20030123/rewind_no-action-chunk_baseline.git ${NO_ACTION_CHUNK_REPO_PATH}" >&2
+  exit 1
+fi
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate "${NO_ACTION_CHUNK_CONDA_ENV:-rewind}"
+
+if [ -d /usr/lib/nvidia ]; then
+  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/usr/lib/nvidia"
+fi
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/home1/chunheil/.mujoco/mujoco210/bin"
+if [ -f /usr/lib/x86_64-linux-gnu/libstdc++.so.6 ]; then
+  export LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libstdc++.so.6${LD_PRELOAD:+:${LD_PRELOAD}}"
+fi
+export MUJOCO_GL="${MUJOCO_GL:-egl}"
+export HYDRA_FULL_ERROR="${HYDRA_FULL_ERROR:-1}"
+
+if [ -f "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}" ]; then
+  source "${WANDB_ENV_FILE:-$HOME/.config/wandb/env}"
+fi
+
+: "${ENV_ID:?Set ENV_ID to one paper eval task. Example: ENV_ID=window-close-v2 sbatch rl_no_action_chunk_rewind_baseline_paper_one_task_3seeds.job}"
+: "${WANDB_API_KEY:?WANDB_API_KEY is not set. Export it before sbatch or store it in \$HOME/.config/wandb/env.}"
+
+export WANDB_API_KEY
+export WANDB_ENTITY="${WANDB_ENTITY:-lincolnlam-university-of-southern-california}"
+export WANDB_PROJECT="${WANDB_PROJECT:-rewind-policy-training}"
+export WANDB_SILENT=true
+export WANDB_DIR="${WANDB_DIR:-${SCRATCH_RUN_ROOT}/wandb}"
+export WANDB_CACHE_DIR="${WANDB_CACHE_DIR:-${SCRATCH_RUN_ROOT}/wandb_cache}"
+export WANDB_CONFIG_DIR="${WANDB_CONFIG_DIR:-${SCRATCH_RUN_ROOT}/wandb_config}"
+mkdir -p "${SCRATCH_RUN_ROOT}" "${SCRATCH_SLURM_LOG_ROOT}" "${WANDB_DIR}" "${WANDB_CACHE_DIR}" "${WANDB_CONFIG_DIR}"
+
+case "${ENV_ID}" in
+  window-close-v2|reach-wall-v2|faucet-close-v2|coffee-button-v2|button-press-wall-v2|door-lock-v2|handle-press-side-v2|sweep-into-v2)
+    ;;
+  *)
+    echo "Unsupported ENV_ID=${ENV_ID}." >&2
+    echo "Use one of the paper eval tasks: window-close-v2 reach-wall-v2 faucet-close-v2 coffee-button-v2 button-press-wall-v2 door-lock-v2 handle-press-side-v2 sweep-into-v2" >&2
+    exit 1
+    ;;
+esac
+
+declare -a SEEDS=(0 32 42)
+SEED="${SEEDS[$SLURM_ARRAY_TASK_ID]}"
+
+if [ -z "${SEED}" ]; then
+  echo "Invalid SLURM_ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID}; expected 0, 1, or 2." >&2
+  exit 1
+fi
+
+OFFLINE_H5_PATH="${OFFLINE_H5_PATH:-datasets/metaworld_labeled_nochunk_linear_epoch14.h5}"
+REWARD_MODEL_PATH="${REWARD_MODEL_PATH:-${REWIND_REPO_PATH}/checkpoints/openx_linear_train_only_15ep/rewind_metaworld_epoch_14.pth}"
+OFFLINE_TRAINING_STEPS="${OFFLINE_TRAINING_STEPS:-100000}"
+ONLINE_TOTAL_TIME_STEPS="${ONLINE_TOTAL_TIME_STEPS:-100000}"
+SUCCESS_BONUS="${SUCCESS_BONUS:-200}"
+REWARD_DIVISOR="${REWARD_DIVISOR:-1}"
+GROUP="paper_nochunk_rewind_linear_epoch14_${ENV_ID}"
+LOGDIR="${LOGDIR:-${SCRATCH_RUN_ROOT}/${GROUP}/seed_${SEED}}"
+
+cd "${NO_ACTION_CHUNK_REPO_PATH}"
+
+echo "Patching no-action-chunk render calls for headless rgb_array rendering."
+python - <<'PY'
+from pathlib import Path
+
+patches = {
+    Path("envs/metaworld_envs/metaworld.py"): {
+        "return self.base_env.render()": "return self.base_env.render(mode)",
+        "return self.base_env.render(mode=mode)": "return self.base_env.render(mode)",
+    },
+    Path("envs/metaworld_envs/wrappers.py"): {
+        "image = self.env.render()": "image = self.env.render(\"rgb_array\")",
+        "image = self.env.render(mode=\"rgb_array\")": "image = self.env.render(\"rgb_array\")",
+        "frame = self.env.render()": "frame = self.env.render(\"rgb_array\")",
+        "frame = self.env.render(mode=\"rgb_array\")": "frame = self.env.render(\"rgb_array\")",
+    },
+}
+
+for path, replacements in patches.items():
+    if not path.exists():
+        print(f"Patch skipped; missing {path}")
+        continue
+    text = path.read_text()
+    original = text
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    if text != original:
+        path.write_text(text)
+        print(f"Patched {path}")
+    else:
+        print(f"No patch needed for {path}")
+PY
+
+if [ ! -f "${OFFLINE_H5_PATH}" ]; then
+  echo "Missing no-action-chunk baseline H5: ${OFFLINE_H5_PATH}" >&2
+  echo "Run the baseline label job first:" >&2
+  echo "  sbatch ${REWIND_REPO_PATH}/label_reward_model_linear_epoch14_no_action_chunk.job" >&2
+  exit 1
+fi
+
+if [ ! -f "${REWARD_MODEL_PATH}" ]; then
+  echo "Missing linear ReWiND reward checkpoint: ${REWARD_MODEL_PATH}" >&2
+  exit 1
+fi
+
+mkdir -p "${LOGDIR}"
+
+echo "===== ReWiND no-action-chunk paper-baseline attempt ====="
+echo "REPO_PATH:          ${NO_ACTION_CHUNK_REPO_PATH}"
+echo "MODE:               no action chunk"
+echo "BASELINE:           linear ReWiND only"
+echo "ENV_ID:             ${ENV_ID}"
+echo "SEED:               ${SEED}"
+echo "OFFLINE_H5_PATH:    ${OFFLINE_H5_PATH}"
+echo "REWARD_MODEL_PATH:  ${REWARD_MODEL_PATH}"
+echo "GROUP:              ${GROUP}"
+echo "LOGDIR:             ${LOGDIR}"
+echo "WANDB_PROJECT:      ${WANDB_PROJECT}"
+echo "WANDB_ENTITY:       ${WANDB_ENTITY}"
+echo "OFFLINE_STEPS:      ${OFFLINE_TRAINING_STEPS}"
+echo "ONLINE_STEPS:       ${ONLINE_TOTAL_TIME_STEPS}"
+echo "SUCCESS_BONUS:      ${SUCCESS_BONUS}"
+echo "REWARD_DIVISOR:     ${REWARD_DIVISOR}"
+echo "LEARNING_RATE:      1e-3"
+echo "N_CRITICS:          10"
+echo "MIX_BUFFERS_RATIO:  0.0"
+echo "MUJOCO_GL:          ${MUJOCO_GL}"
+echo "LD_PRELOAD:         ${LD_PRELOAD:-unset}"
+echo "========================================================="
+
+python test_scripts/test_iql.py \
+  metaworld=off_on_15 \
+  algorithm=wsrl_iql \
+  reward=rewind \
+  logging.wandb=true \
+  logging.wandb_entity_name="${WANDB_ENTITY}" \
+  logging.wandb_project_name="${WANDB_PROJECT}" \
+  logging.wandb_group_name="${GROUP}" \
+  logging.log_dir="${LOGDIR}" \
+  offline_training.offline_training_steps="${OFFLINE_TRAINING_STEPS}" \
+  online_training.total_time_steps="${ONLINE_TOTAL_TIME_STEPS}" \
+  general_training.seed="${SEED}" \
+  environment.env_id="${ENV_ID}" \
+  offline_training.offline_h5_path="${OFFLINE_H5_PATH}" \
+  reward_model.model_path="${REWARD_MODEL_PATH}" \
+  reward_model.success_bonus="${SUCCESS_BONUS}" \
+  reward_model.reward_divisor="${REWARD_DIVISOR}" \
+  hydra.run.dir=.

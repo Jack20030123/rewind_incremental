@@ -1,0 +1,91 @@
+#!/bin/bash
+#SBATCH --account=biyik_1165
+#SBATCH --job-name=label_nochunk_linear_e14
+#SBATCH --output=/scratch1/chunheil/ReWiND_slurm_logs/%x-%j.out
+#SBATCH --error=/scratch1/chunheil/ReWiND_slurm_logs/%x-%j.err
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-task=1
+#SBATCH --constraint="a100|l40s|v100|a40"
+#SBATCH --mem=64G
+#SBATCH --time=48:00:00
+
+set -eo pipefail
+
+REWIND_REPO_PATH="${REWIND_REPO_PATH:-/home1/chunheil/ReWiND}"
+NO_ACTION_CHUNK_REPO_PATH="${NO_ACTION_CHUNK_REPO_PATH:-/home1/chunheil/rewind_no-action-chunk_baseline}"
+SCRATCH_SLURM_LOG_ROOT="${SCRATCH_SLURM_LOG_ROOT:-/scratch1/chunheil/ReWiND_slurm_logs}"
+
+if [ ! -d "${NO_ACTION_CHUNK_REPO_PATH}" ]; then
+  echo "Missing no-action-chunk repo: ${NO_ACTION_CHUNK_REPO_PATH}" >&2
+  echo "Clone it without overwriting ${REWIND_REPO_PATH}, for example:" >&2
+  echo "  git clone https://github.com/Jack20030123/rewind_no-action-chunk_baseline.git ${NO_ACTION_CHUNK_REPO_PATH}" >&2
+  exit 1
+fi
+
+source /home1/chunheil/miniconda3/etc/profile.d/conda.sh
+conda activate "${NO_ACTION_CHUNK_CONDA_ENV:-rewind}"
+
+if [ -d /usr/lib/nvidia ]; then
+  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/usr/lib/nvidia"
+fi
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/home1/chunheil/.mujoco/mujoco210/bin"
+if [ -f /usr/lib/x86_64-linux-gnu/libstdc++.so.6 ]; then
+  export LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libstdc++.so.6${LD_PRELOAD:+:${LD_PRELOAD}}"
+fi
+export MUJOCO_GL="${MUJOCO_GL:-egl}"
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+mkdir -p "${SCRATCH_SLURM_LOG_ROOT}"
+cd "${NO_ACTION_CHUNK_REPO_PATH}"
+mkdir -p datasets
+
+H5_VIDEO_PATH="${H5_VIDEO_PATH:-${REWIND_REPO_PATH}/datasets_rewind_scratch/metaworld_generation.h5}"
+H5_EMBEDDING_PATH="${H5_EMBEDDING_PATH:-${REWIND_REPO_PATH}/datasets_rewind_scratch/metaworld_embeddings_train.h5}"
+REWARD_MODEL_PATH="${REWARD_MODEL_PATH:-${REWIND_REPO_PATH}/checkpoints/openx_linear_train_only_15ep/rewind_metaworld_epoch_14.pth}"
+OUTPUT_PATH="${OUTPUT_PATH:-datasets/metaworld_labeled_nochunk_linear_epoch14.h5}"
+
+if [ ! -f "${H5_VIDEO_PATH}" ]; then
+  echo "Missing H5 video path: ${H5_VIDEO_PATH}" >&2
+  exit 1
+fi
+
+if [ ! -f "${H5_EMBEDDING_PATH}" ]; then
+  echo "Missing H5 embedding path: ${H5_EMBEDDING_PATH}" >&2
+  exit 1
+fi
+
+if [ ! -f "${REWARD_MODEL_PATH}" ]; then
+  echo "Missing linear ReWiND reward checkpoint: ${REWARD_MODEL_PATH}" >&2
+  exit 1
+fi
+
+if [ -f "${OUTPUT_PATH}" ] && [ "${OVERWRITE_LABELS:-0}" != "1" ]; then
+  echo "Skipping; ${OUTPUT_PATH} already exists. Set OVERWRITE_LABELS=1 to regenerate."
+  exit 0
+fi
+
+if [ -f "${OUTPUT_PATH}" ]; then
+  rm -f "${OUTPUT_PATH}"
+fi
+
+echo "===== Labeling no-action-chunk linear ReWiND baseline ====="
+echo "REPO_PATH:          ${NO_ACTION_CHUNK_REPO_PATH}"
+echo "MODE:               no action chunk"
+echo "BASELINE:           linear ReWiND only"
+echo "H5_VIDEO_PATH:      ${H5_VIDEO_PATH}"
+echo "H5_EMBEDDING_PATH:  ${H5_EMBEDDING_PATH}"
+echo "REWARD_MODEL_PATH:  ${REWARD_MODEL_PATH}"
+echo "OUTPUT_PATH:        ${OUTPUT_PATH}"
+echo "==========================================================="
+
+python scripts/generate_labeled_dataset.py \
+  --reward_model_path "${REWARD_MODEL_PATH}" \
+  --h5_video_path "${H5_VIDEO_PATH}" \
+  --h5_embedding_path "${H5_EMBEDDING_PATH}" \
+  --output_path "${OUTPUT_PATH}"
