@@ -65,7 +65,7 @@ python train_reward.py \
   --batch_size "${BATCH_SIZE}" \
   --worker "${WORKER}" \
   --epochs 15 \
-  --eval_interval 5 \
+  --eval_interval 1 \
   --seed "${SEED}" \
   --log_confusion_matrix \
   --confusion_matrix_final_only \
