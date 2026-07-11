@@ -23,7 +23,7 @@ LABELED_H5="${LABELED_H5:-${SCRATCH_ROOT}/datasets/metaworld_labeled_openx_flow_
 REWARD_MODEL_PATH="${REWARD_MODEL_PATH:-${SCRATCH_ROOT}/checkpoints_flow/openx_flow_20ep/rewind_metaworld_epoch_19.pth}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${SCRATCH_ROOT}/no_action_offline/openx_flow_epoch19}"
 OFFLINE_STEPS="${OFFLINE_STEPS:-100000}"
-SUCCESS_BONUS="${SUCCESS_BONUS:-0}"
+SUCCESS_BONUS="${SUCCESS_BONUS:-200}"
 REWARD_DIVISOR="${REWARD_DIVISOR:-1.0}"
 STAGE_DATA="${STAGE_DATA:-1}"
 OVERWRITE_OUTPUT="${OVERWRITE_OUTPUT:-false}"
@@ -40,8 +40,8 @@ if ! [[ "${OFFLINE_STEPS}" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: OFFLINE_STEPS must be a positive integer: ${OFFLINE_STEPS}" >&2
   exit 2
 fi
-if [[ "${SUCCESS_BONUS}" != "0" && "${SUCCESS_BONUS}" != "0.0" ]]; then
-  echo "ERROR: this raw-reward offline job requires SUCCESS_BONUS=0" >&2
+if [[ "${SUCCESS_BONUS}" != "200" && "${SUCCESS_BONUS}" != "200.0" ]]; then
+  echo "ERROR: the matched ReWiND comparison requires SUCCESS_BONUS=200" >&2
   exit 2
 fi
 if [[ "${REWARD_DIVISOR}" != "1" && "${REWARD_DIVISOR}" != "1.0" ]]; then
@@ -50,13 +50,14 @@ if [[ "${REWARD_DIVISOR}" != "1" && "${REWARD_DIVISOR}" != "1.0" ]]; then
 fi
 
 SEED="${SEEDS[$ARRAY_TASK_ID]}"
-LOG_GROUP="offline_rewind_openx_flow_epoch19_10critics"
+LOG_GROUP="offline_rewind_openx_flow_epoch19_bonus200_10critics"
 LOG_DIR="${OUTPUT_ROOT}/${LOG_GROUP}_seed${SEED}"
 STAGE_DIR="${TMPDIR:-/tmp/SLURM_${SLURM_JOB_ID}}/${USER}/rewind_offline_flow_seed${SEED}"
 TRAIN_H5="${LABELED_H5}"
 
 required_files=(
   "${NO_ACTION_REPO}/test_scripts/test_iql.py"
+  "${NO_ACTION_REPO}/offline_rl_algorithms/transition_utils.py"
   "${LABELED_H5}"
   "${REWARD_MODEL_PATH}"
 )
@@ -140,6 +141,8 @@ import h5py
 import numpy as np
 import torch
 
+from offline_rl_algorithms.offline_replay_buffers import H5ReplayBuffer
+
 source_path, train_path = sys.argv[1:3]
 if os.path.getsize(source_path) != os.path.getsize(train_path):
     raise SystemExit("ERROR: staged H5 size does not match the source")
@@ -163,6 +166,7 @@ with h5py.File(train_path, "r") as h5_file:
         raise SystemExit(f"ERROR: inconsistent H5 dataset lengths: {lengths}")
 
     rewards = np.asarray(h5_file["rewards"], dtype=np.float32)
+    dones = np.asarray(h5_file["done"], dtype=np.float32)
     if not np.isfinite(rewards).all():
         raise SystemExit("ERROR: rewards contain non-finite values")
     if bool(h5_file.attrs.get("use_progress_diff", False)):
@@ -174,6 +178,33 @@ with h5py.File(train_path, "r") as h5_file:
         f"max={float(rewards.max()):.6f} mean={float(rewards.mean()):.6f} "
         "use_progress_diff=False"
     )
+
+buffer = H5ReplayBuffer(
+    train_path,
+    success_bonus=200.0,
+    use_language_embeddings=True,
+    is_state_based=False,
+    use_proprio=True,
+    reward_divisor=1.0,
+)
+nonterminal_indices = np.flatnonzero(buffer.dones < 0.5)
+terminal_indices = np.flatnonzero(buffer.dones >= 0.5)
+if len(nonterminal_indices) == 0 or len(terminal_indices) == 0:
+    raise SystemExit("ERROR: labeled H5 must contain terminal and non-terminal rows")
+
+np.testing.assert_array_equal(
+    buffer.next_observations[nonterminal_indices],
+    buffer.observations[nonterminal_indices + 1],
+)
+np.testing.assert_allclose(
+    buffer.rewards[terminal_indices],
+    rewards[terminal_indices] + 200.0,
+)
+print(
+    "OFFLINE_TRANSITIONS_OK "
+    f"nonterminal={len(nonterminal_indices)} terminal={len(terminal_indices)} "
+    "success_bonus=200"
+)
 
 if not torch.cuda.is_available():
     raise SystemExit("ERROR: CUDA is unavailable")
@@ -198,6 +229,7 @@ echo "N_CRITICS_TO_SAMPLE=2"
 echo "SUCCESS_BONUS=${SUCCESS_BONUS}"
 echo "REWARD_DIVISOR=${REWARD_DIVISOR}"
 echo "USE_PROGRESS_DIFF=false"
+echo "USE_BASE_REWARD=false"
 echo "ONLINE_STEPS=0"
 echo "==============================================================="
 
