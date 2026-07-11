@@ -19,8 +19,9 @@ OPENX_FLOW_PATH="${OPENX_FLOW_PATH:-/scratch1/haobaizh/rewind_incremental/datase
 SCRATCH_ROOT="${SCRATCH_ROOT:-/scratch1/haobaizh/rewind_incremental}"
 CONDA_ENV="${CONDA_ENV:-/scratch1/haobaizh/conda_envs/rewind}"
 
-TARGET_WANDB_ENTITY="${WANDB_ENTITY:-rewind-valuemodel}"
-TARGET_WANDB_PROJECT="${WANDB_PROJECT:-rewind-reward-training}"
+TARGET_WANDB_ENTITY="${REWARD_WANDB_ENTITY:-rewind-valuemodel}"
+TARGET_WANDB_PROJECT="${REWARD_WANDB_PROJECT:-rewind-reward-training}"
+TARGET_WANDB_MODE="${REWARD_WANDB_MODE:-online}"
 EPOCHS="${EPOCHS:-1}"
 RUN_SUFFIX="${RUN_SUFFIX:-openx_flow_smoke_1ep}"
 BATCH_SIZE="${BATCH_SIZE:-1024}"
@@ -83,7 +84,7 @@ if [ -f "${WANDB_ENV_FILE}" ]; then
   # shellcheck disable=SC1090
   source "${WANDB_ENV_FILE}"
 fi
-export WANDB_MODE="${WANDB_MODE:-online}"
+export WANDB_MODE="${TARGET_WANDB_MODE}"
 export WANDB_DIR="${SCRATCH_ROOT}/wandb"
 export WANDB_CACHE_DIR="${SCRATCH_ROOT}/.cache/wandb"
 export WANDB_CONFIG_DIR="${SCRATCH_ROOT}/.config/wandb"
