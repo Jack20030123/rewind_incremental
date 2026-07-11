@@ -27,8 +27,13 @@ SUCCESS_BONUS="${SUCCESS_BONUS:-200}"
 REWARD_DIVISOR="${REWARD_DIVISOR:-1.0}"
 STAGE_DATA="${STAGE_DATA:-1}"
 OVERWRITE_OUTPUT="${OVERWRITE_OUTPUT:-false}"
+EXPECTED_PROGRESS_TARGET_TYPE="${EXPECTED_PROGRESS_TARGET_TYPE:-optical_flow}"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-rewind_openx_flow_epoch19_bonus200_10critics}"
+STAGE_TAG="${STAGE_TAG:-rewind_offline_flow}"
+RUN_DESCRIPTION="${RUN_DESCRIPTION:-no-action OpenX pixel-difference offline policy}"
 
-# Match the verified no-action-chunk baseline seeds.
+# Offline training is shared across evaluation environments. Online training
+# later fans each seed out across the eight MetaWorld evaluation tasks.
 SEEDS=(42 32 0)
 ARRAY_TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 
@@ -49,10 +54,11 @@ if [[ "${REWARD_DIVISOR}" != "1" && "${REWARD_DIVISOR}" != "1.0" ]]; then
   exit 2
 fi
 
+ENV_ID="coffee-button-v2"
 SEED="${SEEDS[$ARRAY_TASK_ID]}"
-LOG_GROUP="offline_rewind_openx_flow_epoch19_bonus200_10critics"
+LOG_GROUP="offline_${EXPERIMENT_NAME}"
 LOG_DIR="${OUTPUT_ROOT}/${LOG_GROUP}_seed${SEED}"
-STAGE_DIR="${TMPDIR:-/tmp/SLURM_${SLURM_JOB_ID}}/${USER}/rewind_offline_flow_seed${SEED}"
+STAGE_DIR="${TMPDIR:-/tmp/SLURM_${SLURM_JOB_ID}}/${USER}/${STAGE_TAG}_seed${SEED}"
 TRAIN_H5="${LABELED_H5}"
 
 required_files=(
@@ -133,9 +139,14 @@ export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
 export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 
-python - "${LABELED_H5}" "${TRAIN_H5}" <<'PY'
+python - \
+  "${LABELED_H5}" \
+  "${TRAIN_H5}" \
+  "${REWARD_MODEL_PATH}" \
+  "${EXPECTED_PROGRESS_TARGET_TYPE}" <<'PY'
 import os
 import sys
+from pathlib import Path
 
 import h5py
 import numpy as np
@@ -143,9 +154,32 @@ import torch
 
 from offline_rl_algorithms.offline_replay_buffers import H5ReplayBuffer
 
-source_path, train_path = sys.argv[1:3]
+source_path, train_path, reward_model_path, expected_target_type = sys.argv[1:5]
 if os.path.getsize(source_path) != os.path.getsize(train_path):
     raise SystemExit("ERROR: staged H5 size does not match the source")
+
+checkpoint = torch.load(
+    reward_model_path,
+    map_location="cpu",
+    weights_only=False,
+)
+checkpoint_args = checkpoint.get("args")
+actual_target_type = getattr(checkpoint_args, "progress_target_type", None)
+if actual_target_type != expected_target_type:
+    raise SystemExit(
+        "ERROR: reward checkpoint target mismatch: "
+        f"expected={expected_target_type} actual={actual_target_type}"
+    )
+openx_file = Path(getattr(checkpoint_args, "openx_embedding_path", "")).name
+if openx_file != "full_openx_flow_embeddings_train.h5":
+    raise SystemExit(
+        "ERROR: reward checkpoint was not trained on the matched OpenX file: "
+        f"{openx_file}"
+    )
+print(
+    "REWARD_CHECKPOINT_OK "
+    f"progress_target_type={actual_target_type} openx_file={openx_file}"
+)
 
 required = [
     "state",
@@ -214,7 +248,7 @@ PY
 mkdir -p "${LOG_DIR}"
 cd "${NO_ACTION_REPO}"
 
-echo "========== Train no-action OpenX-flow offline policy =========="
+echo "========== Train ${RUN_DESCRIPTION} =========="
 echo "NO_ACTION_REPO=${NO_ACTION_REPO}"
 echo "TRAIN_H5=${TRAIN_H5}"
 echo "REWARD_MODEL_PATH=${REWARD_MODEL_PATH}"
@@ -222,6 +256,7 @@ echo "LOG_DIR=${LOG_DIR}"
 echo "WANDB_ENTITY=rewind-valuemodel"
 echo "WANDB_PROJECT=rewind-policy-training"
 echo "WANDB_GROUP=${LOG_GROUP}"
+echo "ENV_ID=${ENV_ID}"
 echo "SEED=${SEED}"
 echo "OFFLINE_STEPS=${OFFLINE_STEPS}"
 echo "N_CRITICS=10"
@@ -230,6 +265,7 @@ echo "SUCCESS_BONUS=${SUCCESS_BONUS}"
 echo "REWARD_DIVISOR=${REWARD_DIVISOR}"
 echo "USE_PROGRESS_DIFF=false"
 echo "USE_BASE_REWARD=false"
+echo "EXPECTED_PROGRESS_TARGET_TYPE=${EXPECTED_PROGRESS_TARGET_TYPE}"
 echo "ONLINE_STEPS=0"
 echo "==============================================================="
 
@@ -251,7 +287,7 @@ srun python -u test_scripts/test_iql.py \
   general_training.seed="${SEED}" \
   general_training.n_critics=10 \
   general_training.n_critics_to_sample=2 \
-  environment.env_id=coffee-button-v2 \
+  environment.env_id="${ENV_ID}" \
   logging.wandb_entity_name=rewind-valuemodel \
   logging.wandb_project_name=rewind-policy-training \
   logging.wandb_group_name="${LOG_GROUP}" \
